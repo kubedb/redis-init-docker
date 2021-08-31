@@ -1,4 +1,5 @@
 #!/bin/bash
+
 function waitForPong() {
     for j in {120..0}; do
         if [[ "${TLS:-0}" == "ON" ]]; then

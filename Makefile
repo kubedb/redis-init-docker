@@ -1,22 +1,51 @@
 SHELL=/bin/bash -o pipefail
 
-REGISTRY ?= hremon331046
-BIN      := predis
-IMAGE    := $(REGISTRY)/$(BIN)
-TAG      := 1.0.0
+REGISTRY   ?= kubedb
+BIN        ?= redis-init
+IMAGE      := $(REGISTRY)/$(BIN)
+TAG        ?= $(shell git describe --exact-match --abbrev=0 2>/dev/null || echo "")
 
-.PHONY: push
-push: container
-	docker push $(IMAGE):$(TAG)
+DOCKER_PLATFORMS := linux/amd64 linux/arm64
+PLATFORM         ?= $(firstword $(DOCKER_PLATFORMS))
+VERSION          = $(TAG)_$(subst /,_,$(PLATFORM))
+
+container-%:
+	@$(MAKE) container \
+	    --no-print-directory \
+	    PLATFORM=$(subst _,/,$*)
+
+push-%:
+	@$(MAKE) push \
+	    --no-print-directory \
+	    PLATFORM=$(subst _,/,$*)
+
+all-container: $(addprefix container-, $(subst /,_,$(DOCKER_PLATFORMS)))
+
+all-push: $(addprefix push-, $(subst /,_,$(DOCKER_PLATFORMS)))
 
 .PHONY: container
 container:
-	docker build --pull -t $(IMAGE):$(TAG) .
+	@echo "container: $(IMAGE):$(VERSION)"
+	@docker buildx build --platform $(PLATFORM) --load --pull -t $(IMAGE):$(VERSION) -f Dockerfile .
+	@echo
 
+push: container
+	@docker push $(IMAGE):$(VERSION)
+	@echo "pushed: $(IMAGE):$(VERSION)"
+	@echo
+
+.PHONY: docker-manifest
+docker-manifest:
+	docker manifest create -a $(IMAGE):$(TAG) $(foreach PLATFORM,$(DOCKER_PLATFORMS),$(IMAGE):$(TAG)_$(subst /,_,$(PLATFORM)))
+	docker manifest push $(IMAGE):$(TAG)
+
+.PHONY: release
+release:
+	@$(MAKE) all-push docker-manifest --no-print-directory
 
 .PHONY: version
 version:
-	@echo ::set-output name=version::$(TAG)
+	@echo ::set-output name=version::$(VERSION)
 
 .PHONY: fmt
 fmt:
@@ -35,5 +64,5 @@ ci: verify
 .PHONY: push-to-kind
 push-to-kind: container
 	@echo "Loading docker image into kind cluster...."
-	@kind load docker-image $(IMAGE):$(TAG)
+	@kind load docker-image $(IMAGE):$(VERSION)
 	@echo "Image has been pushed successfully into kind cluster."

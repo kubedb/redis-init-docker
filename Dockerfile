@@ -1,5 +1,4 @@
-
-FROM debian:buster
+FROM alpine
 
 COPY scripts /tmp/scripts
 RUN chmod +x /tmp/scripts/on-start.sh
@@ -9,8 +8,3 @@ COPY conf /tmp/conf
 
 COPY init_scripts /init_scripts
 ENTRYPOINT ["/init_scripts/run.sh"]
-
-
-
-
-
