@@ -2,9 +2,9 @@
 function waitForPong() {
     for j in {120..0}; do
         if [[ "${TLS:-0}" == "ON" ]]; then
-          out=$(timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt ping)
+            out=$(timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt ping)
         else
-          out=$(timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ping)
+            out=$(timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ping)
         fi
         echo "Trying to ping: Step='$j', '$HOSTNAME'.'$GOVERNING_SERVICE' ,  Got='$out'"
         if [[ "$out" == "PONG" ]]; then
@@ -19,15 +19,14 @@ function resetSentinel() {
     echo "reset Sentinel $HOSTNAME "
     waitForPong
     if [[ "${TLS:-0}" == "ON" ]]; then
-      timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL RESET "*"
+        timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL RESET "*"
     else
-      timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 SENTINEL RESET "*"
+        timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 SENTINEL RESET "*"
     fi
 }
 
-
 function setSentinelConf() {
-  echo "sentinel announce-ip $HOSTNAME.$GOVERNING_SERVICE" >>/data/sentinel.conf
+    echo "sentinel announce-ip $HOSTNAME.$GOVERNING_SERVICE" >>/data/sentinel.conf
 }
 
 flag=1
@@ -60,5 +59,3 @@ else
     resetSentinel
     wait $pid
 fi
-
-
