@@ -89,7 +89,7 @@ function findSDownStateForAllReplicasInfo() {
 
             if [[ "$found" == "1" ]]; then
                 state=$line
-                if [[ "$state" =~ .*"s_down".* || "$state" =~ .*"o_down".* || "$state" =~ .*"disconnected".*    ]]; then
+                if [[ "$state" =~ .*"s_down".* || "$state" =~ .*"o_down".* || "$state" =~ .*"disconnected".* ]]; then
                     s_down="true"
                 else
                     s_down="false"
@@ -204,7 +204,7 @@ function getState() {
 
         if [[ "$found" == "1" ]]; then
             state=$line
-            if [[ "$state" =~ .*"s_down".* || "$state" =~ .*"o_down".* || "$state" =~ .*"disconnected".*   ]]; then
+            if [[ "$state" =~ .*"s_down".* || "$state" =~ .*"o_down".* || "$state" =~ .*"disconnected".* ]]; then
                 s_down="true"
             else
                 s_down="false"
@@ -218,7 +218,7 @@ function getState() {
 function findMasterState() {
     while true; do
         if [[ "${TLS:-0}" == "ON" ]]; then
-            INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 -a "$SENTINEL_PASSWORD" --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel master $STATEFULSET_NAME  2>/dev/null) && break
+            INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 -a "$SENTINEL_PASSWORD" --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel master $STATEFULSET_NAME 2>/dev/null) && break
         else
             INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p $SENTINEL_PORT -a "$SENTINEL_PASSWORD" --no-auth-warning sentinel master $STATEFULSET_NAME 2>/dev/null) && break
         fi
@@ -227,17 +227,17 @@ function findMasterState() {
 }
 
 function CheckIfMasterIsNotInSDownState() {
-  while true; do
-    for ((i = 0; i < $sentinel_replica_count; i++)); do
-        findMasterState "$SENTINEL_NAME-$i"
-        if [[ "$s_down" == "true" ]]; then
-          break
+    while true; do
+        for ((i = 0; i < $sentinel_replica_count; i++)); do
+            findMasterState "$SENTINEL_NAME-$i"
+            if [[ "$s_down" == "true" ]]; then
+                break
+            fi
+        done
+        if [[ "$s_down" == "false" ]]; then
+            break
         fi
     done
-    if [[ "$s_down" == "false" ]]; then
-        break
-    fi
-  done
 
 }
 

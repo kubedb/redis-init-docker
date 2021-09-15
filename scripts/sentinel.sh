@@ -25,7 +25,7 @@ function waitForPong() {
 }
 
 function resetSentinel() {
-    log "INFO"  "resetting Sentinel $HOSTNAME..."
+    log "INFO" "resetting Sentinel $HOSTNAME..."
     waitForPong
     if [[ "${TLS:-0}" == "ON" ]]; then
         timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL RESET "*"
