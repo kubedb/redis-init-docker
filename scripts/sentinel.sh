@@ -36,8 +36,10 @@ function resetSentinel() {
 
 function setSentinelConf() {
     echo "sentinel announce-ip $HOSTNAME.$GOVERNING_SERVICE" >>/data/sentinel.conf
-    echo "requirepass $REDISCLI_AUTH" >>/data/sentinel.conf
-    echo "masterauth $REDISCLI_AUTH" >>/data/sentinel.conf
+    if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
+        echo "requirepass $REDISCLI_AUTH" >>/data/sentinel.conf
+        echo "masterauth $REDISCLI_AUTH" >>/data/sentinel.conf
+    fi
 }
 
 flag=1
