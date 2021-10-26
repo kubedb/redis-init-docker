@@ -6,9 +6,9 @@ timeout=5000
 SENTINEL_PORT=26379
 sentinel_replica_count=$SENTINEL_REPLICAS
 sentinel_quorum_val=$(((sentinel_replica_count + 1) / 2))
-cp /usr/local/etc/redis/redis.conf /data/redis.conf
+cp /usr/local/etc/redis/default.conf /data/default.conf
 
-echo "replica-announce-ip $HOSTNAME.$REDIS_GOVERNING_SERVICE" >>/data/redis.conf
+echo "replica-announce-ip $HOSTNAME.$REDIS_GOVERNING_SERVICE" >>/data/default.conf
 function timestamp() {
     date +"%Y/%m/%d %T"
 }
@@ -268,7 +268,7 @@ if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
     log "INFO" "initializing the redis server for the first time..."
     self="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
     if [[ $HOSTNAME == "$STATEFULSET_NAME-0" ]]; then
-        exec redis-server /data/redis.conf $args &
+        exec redis-server /data/default.conf $args &
         pid=$!
         waitForRedisToBeReady $self
         addConfigurationWithAllSentinel "$STATEFULSET_NAME-0.$REDIS_GOVERNING_SERVICE"
@@ -281,8 +281,8 @@ if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
             sleep 2
         done
         waitForRedisToBeReady $REDIS_MASTER_DNS
-        echo "replicaof $REDIS_MASTER_DNS $REDIS_MASTER_PORT_NUMBER" >>/data/redis.conf
-        exec redis-server /data/redis.conf $args &
+        echo "replicaof $REDIS_MASTER_DNS $REDIS_MASTER_PORT_NUMBER" >>/data/default.conf
+        exec redis-server /data/default.conf $args &
         pid=$!
     fi
 else
@@ -290,9 +290,9 @@ else
     if [ "$self" != "${REDIS_MASTER_DNS:-0}" ]; then
         log "INFO" "checking if $REDIS_MASTER_DNS ready as primary!"
         waitForRedisToBeReady $REDIS_MASTER_DNS
-        echo "replicaof $REDIS_MASTER_DNS $REDIS_MASTER_PORT_NUMBER" >>/data/redis.conf
+        echo "replicaof $REDIS_MASTER_DNS $REDIS_MASTER_PORT_NUMBER" >>/data/default.conf
     fi
-    exec redis-server /data/redis.conf $args &
+    exec redis-server /data/default.conf $args &
     pid=$!
     waitForRedisToBeReady $self
     if [ "${REDIS_MASTER_DNS:-0}" == "$self" ]; then
