@@ -51,18 +51,18 @@ function resetSentinel() {
     waitForSentinelToBeReady "$1" "$SENTINEL_GOVERNING_SERVICE"
     log "INFO" "resetting sentinel $1.$SENTINEL_GOVERNING_SERVICE"
     if [[ "${TLS:-0}" == "ON" ]]; then
-        redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel reset "$STATEFULSET_NAME" 2>/dev/null
+        redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel reset "$REDIS_CLUSTER_REGISTERED_NAME" 2>/dev/null
     else
-        redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel reset "$STATEFULSET_NAME" 2>/dev/null
+        redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel reset "$REDIS_CLUSTER_REGISTERED_NAME" 2>/dev/null
     fi
 }
 
 function removeClusterFromSpecificSentinel() {
     waitForSentinelToBeReady "$1" "$SENTINEL_GOVERNING_SERVICE"
     if [[ "${TLS:-0}" == "ON" ]]; then
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL REMOVE "$STATEFULSET_NAME"
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL REMOVE "$REDIS_CLUSTER_REGISTERED_NAME"
     else
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL REMOVE "$STATEFULSET_NAME"
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL REMOVE "$REDIS_CLUSTER_REGISTERED_NAME"
     fi
 
 }
@@ -109,9 +109,9 @@ function waitToSyncSentinelConfig() {
     log "INFO" "checking if all sentinel's configuration are up-to-date..."
     for ((j = 0; j < $sentinel_replica_count; j++)); do
         if [[ "${TLS:-0}" == "ON" ]]; then
-            REPLICAS_INFO_FROM_SENTINEL=$(redis-cli -h "$SENTINEL_NAME-$j".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel replicas "$STATEFULSET_NAME" 2>/dev/null)
+            REPLICAS_INFO_FROM_SENTINEL=$(redis-cli -h "$SENTINEL_NAME-$j".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel replicas "$REDIS_CLUSTER_REGISTERED_NAME" 2>/dev/null)
         else
-            REPLICAS_INFO_FROM_SENTINEL=$(redis-cli -h "$SENTINEL_NAME-$j".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel replicas "$STATEFULSET_NAME" 2>/dev/null)
+            REPLICAS_INFO_FROM_SENTINEL=$(redis-cli -h "$SENTINEL_NAME-$j".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel replicas "$REDIS_CLUSTER_REGISTERED_NAME" 2>/dev/null)
         fi
         if [[ "${#REPLICAS_INFO_FROM_SENTINEL}" == "0" ]]; then
             # if there is no replica is available yet , then again check the same sentinel, that's why j--
@@ -132,9 +132,9 @@ function removeMasterGroupFromAllSentinel() {
     for ((i = 0; i < $sentinel_replica_count; i++)); do
         waitForSentinelToBeReady "$SENTINEL_NAME-$i" "$SENTINEL_GOVERNING_SERVICE"
         if [[ "${TLS:-0}" == "ON" ]]; then
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL REMOVE "$STATEFULSET_NAME"
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL REMOVE "$REDIS_CLUSTER_REGISTERED_NAME"
         else
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL REMOVE "$STATEFULSET_NAME"
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL REMOVE "$REDIS_CLUSTER_REGISTERED_NAME"
         fi
     done
 }
@@ -143,19 +143,19 @@ function addConfigurationWithAllSentinel() {
     for ((i = 0; i < $sentinel_replica_count; i++)); do
         waitForSentinelToBeReady "$SENTINEL_NAME-$i" "$SENTINEL_GOVERNING_SERVICE"
         if [[ "${TLS:-0}" == "ON" ]]; then
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL MONITOR $STATEFULSET_NAME "$1" 6379 $sentinel_quorum_val
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL MONITOR $REDIS_CLUSTER_REGISTERED_NAME "$1" 6379 $sentinel_quorum_val
             if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
-                timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL SET $STATEFULSET_NAME auth-pass "$REDISCLI_AUTH"
+                timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL SET $REDIS_CLUSTER_REGISTERED_NAME auth-pass "$REDISCLI_AUTH"
             fi
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $STATEFULSET_NAME failover-timeout $timeout
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $STATEFULSET_NAME down-after-milliseconds $down
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $REDIS_CLUSTER_REGISTERED_NAME failover-timeout $timeout
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $REDIS_CLUSTER_REGISTERED_NAME down-after-milliseconds $down
         else
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL MONITOR $STATEFULSET_NAME "$1" 6379 $sentinel_quorum_val
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL MONITOR $REDIS_CLUSTER_REGISTERED_NAME "$1" 6379 $sentinel_quorum_val
             if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
-                timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL SET $STATEFULSET_NAME auth-pass "$REDISCLI_AUTH"
+                timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL SET $REDIS_CLUSTER_REGISTERED_NAME auth-pass "$REDISCLI_AUTH"
             fi
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $STATEFULSET_NAME failover-timeout $timeout
-            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $STATEFULSET_NAME down-after-milliseconds $down
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $REDIS_CLUSTER_REGISTERED_NAME failover-timeout $timeout
+            timeout 3 redis-cli -h $SENTINEL_NAME-"$i".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $REDIS_CLUSTER_REGISTERED_NAME down-after-milliseconds $down
         fi
     done
 }
@@ -163,28 +163,28 @@ function addConfigurationWithAllSentinel() {
 function addConfigurationWithSpecificSentinel() {
     waitForSentinelToBeReady "$1" "$SENTINEL_GOVERNING_SERVICE"
     if [[ "${TLS:-0}" == "ON" ]]; then
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL MONITOR $STATEFULSET_NAME "$2" 6379 $sentinel_quorum_val
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL MONITOR $REDIS_CLUSTER_REGISTERED_NAME "$2" 6379 $sentinel_quorum_val
         if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
-            timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL SET $STATEFULSET_NAME auth-pass "$REDISCLI_AUTH"
+            timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL SET $REDIS_CLUSTER_REGISTERED_NAME auth-pass "$REDISCLI_AUTH"
         fi
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $STATEFULSET_NAME failover-timeout $timeout
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $STATEFULSET_NAME down-after-milliseconds $down
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $REDIS_CLUSTER_REGISTERED_NAME failover-timeout $timeout
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel set $REDIS_CLUSTER_REGISTERED_NAME down-after-milliseconds $down
     else
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL MONITOR $STATEFULSET_NAME "$2" 6379 $sentinel_quorum_val
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL MONITOR $REDIS_CLUSTER_REGISTERED_NAME "$2" 6379 $sentinel_quorum_val
         if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
-            timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL SET $STATEFULSET_NAME auth-pass "$REDISCLI_AUTH"
+            timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL SET $REDIS_CLUSTER_REGISTERED_NAME auth-pass "$REDISCLI_AUTH"
         fi
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $STATEFULSET_NAME failover-timeout $timeout
-        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $STATEFULSET_NAME down-after-milliseconds $down
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $REDIS_CLUSTER_REGISTERED_NAME failover-timeout $timeout
+        timeout 3 redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel set $REDIS_CLUSTER_REGISTERED_NAME down-after-milliseconds $down
     fi
 }
 
 function getMasterHost() {
     log "INFO" "trying to get master host"
     if [[ "${TLS:-0}" == "ON" ]]; then
-        sentinel_info_command=$(timeout 3 redis-cli -h $SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL get-master-addr-by-name $STATEFULSET_NAME 2>/dev/null)
+        sentinel_info_command=$(timeout 3 redis-cli -h $SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt SENTINEL get-master-addr-by-name $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null)
     else
-        sentinel_info_command=$(timeout 3 redis-cli -h $SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL get-master-addr-by-name $STATEFULSET_NAME 2>/dev/null)
+        sentinel_info_command=$(timeout 3 redis-cli -h $SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning SENTINEL get-master-addr-by-name $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null)
     fi
     REDIS_SENTINEL_INFO=()
     for line in $sentinel_info_command; do
@@ -231,9 +231,9 @@ function getState() {
 function findMasterState() {
     while true; do
         if [[ "${TLS:-0}" == "ON" ]]; then
-            INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel master $STATEFULSET_NAME 2>/dev/null) && break
+            INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 $SENTINEL_PASSWORD_FLAG --no-auth-warning --tls --cert /certs/client.crt --key /certs/client.key --cacert /certs/ca.crt sentinel master $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null) && break
         else
-            INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p $SENTINEL_PORT $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel master $STATEFULSET_NAME 2>/dev/null) && break
+            INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p $SENTINEL_PORT $SENTINEL_PASSWORD_FLAG --no-auth-warning sentinel master $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null) && break
         fi
     done
     getState "$INFO_FROM_SENTINEL"
