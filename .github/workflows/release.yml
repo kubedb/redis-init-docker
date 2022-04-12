@@ -5,11 +5,13 @@ on:
     tags:
       - "*.*"
       - "*.*.*"
-
+  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
+
 jobs:
   build:
     name: Build
@@ -35,6 +37,10 @@ jobs:
           username: 1gtm
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build redis-init
+      - name: Run checks
+        run: |
+          make ci
+
+      - name: Build
         run: |
           make release
