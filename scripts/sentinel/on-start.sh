@@ -5,8 +5,8 @@ down=5000
 timeout=5000
 SENTINEL_PORT=26379
 SENTINEL_PASSWORD_FLAG=""
-if [[ "${SENTINEL_PASSWORD_FLAG:-0}" != 0 ]]; then
-    SENTINEL_PASSWORD_FLAG="-a \"$SENTINEL_PASSWORD\""
+if [[ "${SENTINEL_PASSWORD:-0}" != 0 ]]; then
+    SENTINEL_PASSWORD_FLAG="-a $SENTINEL_PASSWORD"
 fi
 
 sentinel_replica_count=$SENTINEL_REPLICAS
@@ -280,11 +280,11 @@ args=$@
 if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
     log "INFO" "initializing the redis server for the first time..."
     self="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
-    if [[ $HOSTNAME == "$STATEFULSET_NAME-0" ]]; then
+    if [[ $HOSTNAME == "$REDIS_NAME-0" ]]; then
         exec redis-server /data/default.conf $args &
         pid=$!
         waitForRedisToBeReady $self
-        addConfigurationWithAllSentinel "$STATEFULSET_NAME-0.$REDIS_GOVERNING_SERVICE"
+        addConfigurationWithAllSentinel "$REDIS_NAME-0.$REDIS_GOVERNING_SERVICE"
     else
         while true; do
             getMasterHost
