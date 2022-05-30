@@ -446,8 +446,8 @@ getMasterNodeIDForCurrentSlave() {
 
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
-                # Check if current node is slave and get it's master ID
-                if contains "$line" "$node_flag_myself" && contains "$line" "$node_flag_slave"; then
+            # Check if current node is slave and get it's master ID
+            if contains "$line" "$node_flag_myself" && contains "$line" "$node_flag_slave"; then
                 current_slaves_master_id="$(echo "$line" | cut -d' ' -f4)"
 
                 if [ "$(echo -n "$current_slaves_master_id" | wc -m)" -eq 40 ]; then
@@ -521,13 +521,13 @@ processRedisNode() {
 startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec /conf/fix-ip.sh redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
+    exec redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
     redis_server_pid=$!
     waitForAllRedisServersToBeReady 5
 }
 # entry Point of script
 runRedis() {
-    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version 5"
+    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version is 5 or 6 or 7. Using redis-cli commands"
     setupInitialThings
     startRedisServerInBackground
     processRedisNode
