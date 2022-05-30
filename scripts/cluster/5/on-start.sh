@@ -446,7 +446,8 @@ getMasterNodeIDForCurrentSlave() {
 
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
-            if contains "$line" "$node_flag_myself" && contians "$line" "$node_flag_slave"; then
+                # Check if current node is slave and get it's master ID
+                if contains "$line" "$node_flag_myself" && contains "$line" "$node_flag_slave"; then
                 current_slaves_master_id="$(echo "$line" | cut -d' ' -f4)"
 
                 if [ "$(echo -n "$current_slaves_master_id" | wc -m)" -eq 40 ]; then
