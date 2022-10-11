@@ -46,7 +46,7 @@ getDataFromRedisNodeFinder() {
     slave_file_name="slave.txt"
     redis_nodes_file_name="redis-nodes.txt"
     initial_master_nodes_file_name="initial-master-nodes.txt"
-    cd /scripts && ./redis-node-finder run --master-file="$master_file_name" --slave-file="$slave_file_name" --redis-nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
+    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --redis-nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
     MASTER=$(cat "/tmp/$master_file_name")
     REPLICAS=$(cat "/tmp/$slave_file_name")
     redis_nodes=$(cat "/tmp/$redis_nodes_file_name")

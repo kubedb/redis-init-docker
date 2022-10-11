@@ -8,20 +8,6 @@ log() (
     msg="$2"
     echo "$(timestamp) [$script_name] [$type] $msg" | tee -a /tmp/log.txt
 )
-#Checks if tls certificate files exist on the node
-checkTLSCerts() {
-    if [ "${TLS:-0}" = "ON" ]; then
-        log "ARGS" "Setting up TLS arguments"
-        ca_crt=/certs/ca.crt
-        client_cert=/certs/client.crt
-        client_key=/certs/client.key
-
-        if [ ! -f "$ca_crt" ] || [ ! -f "$client_cert" ] || [ ! -f "$client_key" ]; then
-            log "TLS is on , but $ca_crt or $client_cert or $client_key file does not exist"
-            exit 1
-        fi
-    fi
-}
 loadOldNodesConfIfExist() {
     unset old_nodes_conf
     if [ -e /data/nodes.conf ]; then
@@ -64,7 +50,6 @@ setupInitialThings() {
 
     loadOldNodesConfIfExist
     getDataFromRedisNodeFinder
-    #checkTLSCerts
 }
 
 #----------------------------------------------------------------"Common functions" start --------------------------------------------------------------#
@@ -494,7 +479,7 @@ processRedisNode() {
 startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec /conf/fix-ip.sh redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
+    exec redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
     redis_server_pid=$!
     waitForAllRedisServersToBeReady 5
 }
