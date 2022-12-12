@@ -485,7 +485,7 @@ startRedisServerInBackground() {
 }
 # entry Point of script
 runRedis() {
-    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version 4"
+    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version 4. Using Redis trib commands"
     setupInitialThings
     startRedisServerInBackground
     processRedisNode

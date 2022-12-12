@@ -8,8 +8,14 @@ log() (
     msg="$2"
     echo "$(timestamp) [$script_name] [$type] $msg" | tee -a /tmp/log.txt
 )
-#Checks if tls certificate files exist on the node
-checkTLSCerts() {
+#Checks if auth password and tls certificate files exist on the node
+#if yes, add them on the argument string
+setUpRedisArgs() {
+    if [ "${REDISCLI_AUTH:-0}" != 0 ]; then
+          log "ARGS" "Setting up Auth arguments"
+          auth_args="-a ${REDISCLI_AUTH} --no-auth-warning"
+    fi
+
     if [ "${TLS:-0}" = "ON" ]; then
         log "ARGS" "Setting up TLS arguments"
         ca_crt=/certs/ca.crt
@@ -20,7 +26,10 @@ checkTLSCerts() {
             log "TLS is on , but $ca_crt or $client_cert or $client_key file does not exist"
             exit 1
         fi
+
+        tls_args="--tls --cert $client_cert --key $client_key --cacert $ca_crt"
     fi
+    redis_args="$auth_args $tls_args"
 }
 loadOldNodesConfIfExist() {
     unset old_nodes_conf
@@ -64,7 +73,7 @@ setupInitialThings() {
 
     loadOldNodesConfIfExist
     getDataFromRedisNodeFinder
-    checkTLSCerts
+    setUpRedisArgs
 }
 
 #----------------------------------------------------------------"Common functions" start --------------------------------------------------------------#
@@ -80,11 +89,7 @@ checkIfRedisServerIsReady() {
     host="$1"
     is_current_redis_server_running=false
 
-    if [ "${TLS:-0}" = "ON" ]; then
-        RESP=$(redis-cli -h "$host" -p 6379 -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" ping 2>/dev/null)
-    else
-        RESP=$(redis-cli -h "$host" -p 6379 -a "$REDISCLI_AUTH" --no-auth-warning ping 2>/dev/null)
-    fi
+    RESP=$(redis-cli -h "$host" -p 6379 $redis_args ping 2>/dev/null)
     if [ "$RESP" = "PONG" ]; then
         is_current_redis_server_running=true
     fi
@@ -95,11 +100,7 @@ update_nodes_conf() {
     checkIfRedisServerIsReady "$host"
     unset nodes_conf
     if [ "$is_current_redis_server_running" = true ]; then
-        if [ "${TLS:-0}" = "ON" ]; then
-            nodes_conf=$(redis-cli -h "$host" -p 6379 -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" cluster nodes)
-        else
-            nodes_conf=$(redis-cli -h "$host" -p 6379 -a "$REDISCLI_AUTH" --no-auth-warning cluster nodes)
-        fi
+        nodes_conf=$(redis-cli -h "$host" -p 6379 $redis_args cluster nodes)
     fi
 }
 # Wait for current redis servers discovered by node-finder to be up and ready to accept connections and form cluster
@@ -253,11 +254,8 @@ createClusterOrWait() {
                     for itr in $master_nodes_ip_port; do
                         set -- "$@" "$itr"
                     done
-                    if [ "${TLS:-0}" = "ON" ]; then
-                        RESP=$(echo "yes" | redis-cli -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" --cluster create "$@" --cluster-replicas 0)
-                    else
-                        RESP=$(echo "yes" | redis-cli -a "$REDISCLI_AUTH" --no-auth-warning --cluster create "$@" --cluster-replicas 0)
-                    fi
+
+                    RESP=$(echo "yes" | redis-cli $redis_args --cluster create "$@" --cluster-replicas 0)
                     sleep 5
                     log "CREATE CLUSTER" "$RESP"
                     log "CLUSTER" "Successfully created cluster. Returning "
@@ -331,11 +329,8 @@ joinCurrentNodeAsSlave() {
         getNodeIDUsingIP "$shard_master_ip_port"
         if [ -n "$current_node_id" ]; then
             replica_ip_port="$POD_IP:$redis_database_port"
-            if [ "${TLS:-0}" = "ON" ]; then
-                RESP=$(redis-cli -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
-            else
-                RESP=$(redis-cli -a "$REDISCLI_AUTH" --no-auth-warning --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
-            fi
+
+            RESP=$(redis-cli $redis_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
             sleep 5
             log "ADD NODE" "$RESP"
         fi
@@ -382,11 +377,8 @@ meetWithNode() {
         # If Current node ip does not exist in old nodes.conf , need to introduce them
         update_nodes_conf "$POD_IP"
         if ! contains "$old_nodes_conf" "$cur_node_ip" || ! contains "$nodes_conf" "$cur_node_ip"; then
-            if [ "${TLS:-0}" = "ON" ]; then
-                RESP=$(redis-cli -c -h "$POD_IP" -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" cluster meet "$cur_node_ip" "$redis_database_port")
-            else
-                RESP=$(redis-cli -c -h "$POD_IP" -a "$REDISCLI_AUTH" --no-auth-warning cluster meet "$cur_node_ip" "$redis_database_port")
-            fi
+
+            RESP=$(redis-cli -c -h "$POD_IP" $redis_args cluster meet "$cur_node_ip" "$redis_database_port")
             log "MEET" "Meet between $POD_IP and $cur_node_ip is $RESP"
         fi
     else
@@ -416,21 +408,14 @@ checkNodeRole() {
     host="$1"
     unset node_role
 
-    if [ "${TLS:-0}" = "ON" ]; then
-        node_info=$(redis-cli -h "$POD_IP" -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" info | grep role)
-    else
-        node_info=$(redis-cli -h "$POD_IP" -a "$REDISCLI_AUTH" --no-auth-warning info | grep role)
-    fi
+    node_info=$(redis-cli -h "$POD_IP" $redis_args info | grep role)
     if [ -n "$node_info" ]; then
         node_role=$(echo "${node_info#"role:"}" | tr -cd '[:alnum:]._-')
     fi
 
     unset node_info
-    if [ "${TLS:-0}" = "ON" ]; then
-        node_info=$(redis-cli -h "$POD_IP" -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" info | grep master_host)
-    else
-        node_info=$(redis-cli -h "$POD_IP" -a "$REDISCLI_AUTH" --no-auth-warning info | grep master_host)
-    fi
+    node_info=$(redis-cli -h "$POD_IP" $redis_args info | grep master_host)
+
     if [ -n "$node_info" ]; then
         self_master_ip=$(echo "${node_info#"master_host:"}" | tr -cd '[:alnum:]._-')
     fi
@@ -483,11 +468,8 @@ recoverClusterDuringPodRestart() {
         if ! contains "$nodes_conf" "$self_master_ip"; then
             log "RECOVER" "Master IP does not match with nodes.conf. Replicating myself again with master"
             getMasterNodeIDForCurrentSlave
-            if [ "${TLS:-0}" = "ON" ]; then
-                RESP=$(redis-cli -c -a "$REDISCLI_AUTH" --no-auth-warning --tls --cert "$client_cert" --key "$client_key" --cacert "$ca_crt" cluster replicate "$current_slaves_master_id")
-            else
-                RESP=$(redis-cli -c -a "$REDISCLI_AUTH" --no-auth-warning cluster replicate "$current_slaves_master_id")
-            fi
+
+            RESP=$(redis-cli -c $redis_args cluster replicate "$current_slaves_master_id")
             log "RECOVER" "Cluster Replicated with master . Status : $RESP"
         fi
     else
