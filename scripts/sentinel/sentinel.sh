@@ -10,19 +10,18 @@ function log() {
 
 function setUpArgs() {
 
-  if [[ "${TLS:-0}" == "ON" ]]; then
-      ca_crt=/certs/ca.crt
-      client_cert=/certs/client.crt
-      client_key=/certs/client.key
-      if [[ ! -f "$ca_crt" ]] || [[ ! -f "$client_cert" ]] || [[ ! -f "$client_key" ]]; then
-          log "TLs is enabled, but $ca_crt, $client_cert or $client_key file does not exists "
-          exit 1
-      fi
-      tls_args=("--tls --cert ${client_cert} --key ${client_key} --cacert ${ca_crt}")
-  fi
-  log "TLS" "${tls_args[@]}"
+    if [[ "${TLS:-0}" == "ON" ]]; then
+        ca_crt=/certs/ca.crt
+        client_cert=/certs/client.crt
+        client_key=/certs/client.key
+        if [[ ! -f "$ca_crt" ]] || [[ ! -f "$client_cert" ]] || [[ ! -f "$client_key" ]]; then
+            log "TLs is enabled, but $ca_crt, $client_cert or $client_key file does not exists "
+            exit 1
+        fi
+        tls_args=("--tls --cert ${client_cert} --key ${client_key} --cacert ${ca_crt}")
+    fi
+    log "TLS" "${tls_args[@]}"
 }
-
 
 function waitForPong() {
     log "INFO" "Trying to PING $HOSTNAME.$GOVERNING_SERVICE"

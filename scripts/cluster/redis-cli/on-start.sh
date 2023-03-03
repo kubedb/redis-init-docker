@@ -12,8 +12,8 @@ log() (
 #if yes, add them on the argument string
 setUpRedisArgs() {
     if [ "${REDISCLI_AUTH:-0}" != 0 ]; then
-          log "ARGS" "Setting up Auth arguments"
-          auth_args="-a ${REDISCLI_AUTH} --no-auth-warning"
+        log "ARGS" "Setting up Auth arguments"
+        auth_args="-a ${REDISCLI_AUTH} --no-auth-warning"
     fi
 
     if [ "${TLS:-0}" = "ON" ]; then
