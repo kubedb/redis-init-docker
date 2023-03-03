@@ -11,29 +11,29 @@ function log() {
 }
 
 function setUpSentinelArgs() {
-  if [[ "${SENTINEL_PASSWORD:-0}" != 0 ]]; then
-      log "Sentinel_Args" "Setting up Sentinel auth args"
-      sentinel_auth_args=("${sentinel_auth_args[@]} -a ${SENTINEL_PASSWORD} --no-auth-warning")
-  fi
-  if [[ "${SENTINEL_TLS:-0}" == "ON" ]]; then
-      log "Sentinel_Args" "Setting up Sentinel TLS Args"
-      ca_crt=/certs/ca.crt
-      client_cert=/certs/client.crt
-      client_key=/certs/client.key
-      if [[ ! -f "$ca_crt" ]] || [[ ! -f "$client_cert" ]] || [[ ! -f "$client_key" ]]; then
-          log "TLs is enabled, but $ca_crt, $client_cert or $client_key file does not exists "
-          exit 1
-      fi
-      sentinel_tls_args=("--tls --cert ${client_cert} --key ${client_key} --cacert ${ca_crt}")
-  fi
-  sentinel_args=("${sentinel_auth_args[@]} ${sentinel_tls_args[@]}")
+    if [[ "${SENTINEL_PASSWORD:-0}" != 0 ]]; then
+        log "Sentinel_Args" "Setting up Sentinel auth args"
+        sentinel_auth_args=("${sentinel_auth_args[@]} -a ${SENTINEL_PASSWORD} --no-auth-warning")
+    fi
+    if [[ "${SENTINEL_TLS:-0}" == "ON" ]]; then
+        log "Sentinel_Args" "Setting up Sentinel TLS Args"
+        ca_crt=/certs/ca.crt
+        client_cert=/certs/client.crt
+        client_key=/certs/client.key
+        if [[ ! -f "$ca_crt" ]] || [[ ! -f "$client_cert" ]] || [[ ! -f "$client_key" ]]; then
+            log "TLs is enabled, but $ca_crt, $client_cert or $client_key file does not exists "
+            exit 1
+        fi
+        sentinel_tls_args=("--tls --cert ${client_cert} --key ${client_key} --cacert ${ca_crt}")
+    fi
+    sentinel_args=("${sentinel_auth_args[@]} ${sentinel_tls_args[@]}")
 }
 function setUpRedisArgs() {
-   if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
+    if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
         log "Redis_Args" "Setting up Redis auth args"
         redis_auth_args=("${redis_auth_args[@]} -a ${REDISCLI_AUTH} --no-auth-warning")
     fi
-   if [[ "${TLS:-0}" == "ON" ]]; then
+    if [[ "${TLS:-0}" == "ON" ]]; then
         log "Redis_Args" "Setting Up Redis TLS Args"
         ca_crt=/certs/ca.crt
         client_cert=/certs/client.crt
@@ -178,7 +178,6 @@ function addConfigurationWithAllSentinel() {
     done
 }
 
-
 function getMasterHost() {
     log "INFO" "Trying to get master host"
     sentinel_info_command=$(timeout 3 redis-cli -h $SENTINEL_GOVERNING_SERVICE -p 26379 ${sentinel_args[@]} SENTINEL get-master-addr-by-name $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null)
@@ -226,7 +225,7 @@ function getState() {
 # this will find the master state from a specific sentinel
 function findMasterState() {
     while true; do
-       INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 ${sentinel_args[@]} sentinel master $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null) && break
+        INFO_FROM_SENTINEL=$(redis-cli -h "$1".$SENTINEL_GOVERNING_SERVICE -p 26379 ${sentinel_args[@]} sentinel master $REDIS_CLUSTER_REGISTERED_NAME 2>/dev/null) && break
     done
     getState "$INFO_FROM_SENTINEL"
 }
@@ -267,7 +266,7 @@ setUpInitialThings
 while [[ flag -ne 0 ]]; do
     not_exists_dns_entry
     sleep 1
-done 
+done
 
 ## as default down after ms is 5s, so we need give a sleep at new node, at-least 5s or greater time
 sleep 5
@@ -292,7 +291,7 @@ if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
             fi
             sleep 2
         done
-         # Wait for master node to be ready
+        # Wait for master node to be ready
         waitForRedisToBeReady $REDIS_MASTER_DNS
         echo "replicaof $REDIS_MASTER_DNS $REDIS_MASTER_PORT_NUMBER" >>/data/default.conf
         exec redis-server /data/default.conf $args &
