@@ -31,6 +31,7 @@ setUpRedisArgs() {
     fi
     redis_args="$auth_args $tls_args"
 }
+
 loadOldNodesConfIfExist() {
     unset old_nodes_conf
     if [ -e /data/nodes.conf ]; then
@@ -496,6 +497,27 @@ processRedisNode() {
     fi
 }
 
+loadInitData() {
+    if [ -d "/init" ]; then
+        log "INIT" "Init Directory Exists"
+        waitForAllRedisServersToBeReady 120
+        cd /init || true
+        for file in /init/*
+        do
+           case "$file" in
+                   *.sh)
+                       log "INIT" "Running user provided initialization shell script $file"
+                       sh "$file"
+                       ;;
+                   *.lua)
+                       log "INIT" "Running user provided initialization lua script $file"
+                       redis-cli -c $redis_args --eval "$file"
+                       ;;
+               esac
+        done
+    fi
+}
+
 # --cluster-announce-ip command announces nodes ip to redis cluster and update nodes.conf file with updated ip
 # for replica failover
 # Solution Taken from : https://github.com/kubernetes/kubernetes/issues/57726#issuecomment-412467053
@@ -513,6 +535,7 @@ runRedis() {
     setupInitialThings
     startRedisServerInBackground
     processRedisNode
+    loadInitData
 
     log "REDIS" "Bringing back redis server in foreground. Adios"
     wait $redis_server_pid

@@ -261,6 +261,26 @@ not_exists_dns_entry() {
     fi
 }
 
+loadInitData() {
+    if [ -d "/init" ]; then
+        log "INIT" "Init Directory Exists"
+        cd /init || true
+        for file in /init/*
+        do
+           case "$file" in
+                   *.sh)
+                       log "INIT" "Running user provided initialization shell script $file"
+                       sh "$file"
+                       ;;
+                   *.lua)
+                       log "INIT" "Running user provided initialization lua script $file"
+                       redis-cli ${redis_args[@]} --eval "$file"
+                       ;;
+               esac
+        done
+    fi
+}
+
 setUpInitialThings
 
 while [[ flag -ne 0 ]]; do
@@ -321,4 +341,9 @@ else
 fi
 CheckIfMasterIsNotInSDownState
 waitToSyncSentinelConfig
+
+self="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+waitForRedisToBeReady $self
+
+loadInitData
 wait $pid
