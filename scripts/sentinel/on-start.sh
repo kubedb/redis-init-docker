@@ -265,18 +265,17 @@ loadInitData() {
     if [ -d "/init" ]; then
         log "INIT" "Init Directory Exists"
         cd /init || true
-        for file in /init/*
-        do
-           case "$file" in
-                   *.sh)
-                       log "INIT" "Running user provided initialization shell script $file"
-                       sh "$file"
-                       ;;
-                   *.lua)
-                       log "INIT" "Running user provided initialization lua script $file"
-                       redis-cli ${redis_args[@]} --eval "$file"
-                       ;;
-               esac
+        for file in /init/*; do
+            case "$file" in
+                *.sh)
+                    log "INIT" "Running user provided initialization shell script $file"
+                    sh "$file"
+                    ;;
+                *.lua)
+                    log "INIT" "Running user provided initialization lua script $file"
+                    redis-cli ${redis_args[@]} --eval "$file"
+                    ;;
+            esac
         done
     fi
 }
