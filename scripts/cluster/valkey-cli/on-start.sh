@@ -10,10 +10,10 @@ log() (
 )
 #Checks if auth password and tls certificate files exist on the node
 #if yes, add them on the argument string
-setUpRedisArgs() {
-    if [ "${REDISCLI_AUTH:-0}" != 0 ]; then
+setUpValkeyArgs() {
+    if [ "${VALKEYCLI_AUTH:-0}" != 0 ]; then
         log "ARGS" "Setting up Auth arguments"
-        auth_args="-a ${REDISCLI_AUTH} --no-auth-warning"
+        auth_args="-a ${VALKEYCLI_AUTH} --no-auth-warning"
     fi
 
     if [ "${TLS:-0}" = "ON" ]; then
@@ -29,7 +29,7 @@ setUpRedisArgs() {
 
         tls_args="--tls --cert $client_cert --key $client_key --cacert $ca_crt"
     fi
-    redis_args="$auth_args $tls_args"
+    valkey_args="$auth_args $tls_args"
 }
 
 loadOldNodesConfIfExist() {
@@ -54,15 +54,15 @@ loadOldNodesConfIfExist() {
 getDataFromRedisNodeFinder() {
     master_file_name="master.txt"
     slave_file_name="slave.txt"
-    redis_nodes_file_name="redis-nodes.txt"
+    valkey_nodes_file_name="valkey-nodes.txt"
     initial_master_nodes_file_name="initial-master-nodes.txt"
-    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --redis-nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
+    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --valkey-nodes-file="$valkey_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
     MASTER=$(cat "/tmp/$master_file_name")
     REPLICAS=$(cat "/tmp/$slave_file_name")
-    redis_nodes=$(cat "/tmp/$redis_nodes_file_name")
+    valkey_nodes=$(cat "/tmp/$valkey_nodes_file_name")
     initial_master_nodes=$(cat "/tmp/$initial_master_nodes_file_name")
-    log "REDIS" "${redis_nodes}"
-    log "REDIS" "Master : $MASTER , Slave : $REPLICAS"
+    log "VALKEY" "${valkey_nodes}"
+    log "VALKEY" "Master : $MASTER , Slave : $REPLICAS"
 }
 setupInitialThings() {
     script_name=${0##*/}
@@ -70,50 +70,50 @@ setupInitialThings() {
     readonly node_flag_master="master"
     readonly node_flag_slave="slave"
     readonly node_flag_myself="myself"
-    readonly redis_database_port="6379"
+    readonly valkey_database_port="6379"
 
     loadOldNodesConfIfExist
     getDataFromRedisNodeFinder
-    setUpRedisArgs
+    setUpValkeyArgs
 }
 
 #----------------------------------------------------------------"Common functions" start --------------------------------------------------------------#
 # Given DNS name of the pod , the function finds IP:Port of the pod.
-# Here port is default redis port 6379
+# Here port is default valkey port 6379
 getIPPortOfPod() {
     host="$1"
     unset cur_node_ip
     cur_node_ip=$(getent hosts "$host" | awk '{ print $1 }')
 }
 
-checkIfRedisServerIsReady() {
+checkIfValkeyServerIsReady() {
     host="$1"
-    is_current_redis_server_running=false
+    is_current_valkey_server_running=false
 
-    RESP=$(redis-cli -h "$host" -p 6379 $redis_args ping 2>/dev/null)
+    RESP=$(valkey-cli -h "$host" -p 6379 $valkey_args ping 2>/dev/null)
     if [ "$RESP" = "PONG" ]; then
-        is_current_redis_server_running=true
+        is_current_valkey_server_running=true
     fi
 }
 # Updating nodes_conf var which contains cluster nodes. the argument is exec node, executing which we get cluster nodes
 update_nodes_conf() {
     host="$1"
-    checkIfRedisServerIsReady "$host"
+    checkIfValkeyServerIsReady "$host"
     unset nodes_conf
-    if [ "$is_current_redis_server_running" = true ]; then
-        nodes_conf=$(redis-cli -h "$host" -p 6379 $redis_args cluster nodes)
+    if [ "$is_current_valkey_server_running" = true ]; then
+        nodes_conf=$(valkey-cli -h "$host" -p 6379 $valkey_args cluster nodes)
     fi
 }
-# Wait for current redis servers discovered by node-finder to be up and ready to accept connections and form cluster
+# Wait for current valkey servers discovered by node-finder to be up and ready to accept connections and form cluster
 # We will try to ping each node for maxTimeout time and then try next one
-waitForAllRedisServersToBeReady() (
-    log "INFO" "Wait for $1s for each redis server to be ready"
+waitForAllValkeyServersToBeReady() (
+    log "INFO" "Wait for $1s for each valkey server to be ready"
     maxTimeout=$1
-    for domain_name in $redis_nodes; do
+    for domain_name in $valkey_nodes; do
         endTime=$(($(date +%s) + maxTimeout))
         while [ "$(date +%s)" -lt $endTime ]; do
-            checkIfRedisServerIsReady "$domain_name"
-            if [ "$is_current_redis_server_running" = true ]; then
+            checkIfValkeyServerIsReady "$domain_name"
+            if [ "$is_current_valkey_server_running" = true ]; then
                 #log "INFO" "$domain_name is up"
                 break
             fi
@@ -175,9 +175,9 @@ countMasterInNodeConf() {
 isNodeInTheCluster() {
     host="$1"
     unset is_current_node_in_cluster
-    checkIfRedisServerIsReady "$host"
+    checkIfValkeyServerIsReady "$host"
 
-    if [ "$is_current_redis_server_running" = true ]; then
+    if [ "$is_current_valkey_server_running" = true ]; then
         countMasterInNodeConf "$host"
         if [ -n "$cluster_master_cnt" ]; then
             if [ "$cluster_master_cnt" -gt 1 ]; then
@@ -189,23 +189,23 @@ isNodeInTheCluster() {
     fi
 }
 
-# checkIfRedisClusterExist function loops through the dns names and checks if any node knows
+# checkIfValkeyClusterExist function loops through the dns names and checks if any node knows
 # anything about cluster. If no node knows then cluster does not exist
-checkIfRedisClusterExist() {
-    unset does_redis_cluster_exist
-    for domain_name in $redis_nodes; do
+checkIfValkeyClusterExist() {
+    unset does_valkey_cluster_exist
+    for domain_name in $valkey_nodes; do
         isNodeInTheCluster "$domain_name"
 
         if [ -n "$is_current_node_in_cluster" ]; then
             if [ "$is_current_node_in_cluster" = true ]; then
-                log "CLUSTER" "Redis Cluster Exist"
-                does_redis_cluster_exist=true
+                log "CLUSTER" "Valkey Cluster Exist"
+                does_valkey_cluster_exist=true
                 break
             else
                 # shellcheck disable=SC2039
-                self_dns_name="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+                self_dns_name="$HOSTNAME.$VALKEY_GOVERNING_SERVICE"
                 if [ "$self_dns_name" != "$domain_name" ]; then
-                    does_redis_cluster_exist=false
+                    does_valkey_cluster_exist=false
                 fi
             fi
         fi
@@ -218,20 +218,20 @@ checkIfRedisClusterExist() {
 
 # A pod from each shard will be master.
 # So We take ONE pod which is not slave from each shard and store it's IP:PORT in the master_nodes_ip_port array
-# Initially all the 0th pod will be master, so we can iterate over them in redis_nodes array by (REPLICA+1)*i indexes whrere i = 0,1,2,..
+# Initially all the 0th pod will be master, so we can iterate over them in valkey_nodes array by (REPLICA+1)*i indexes whrere i = 0,1,2,..
 findIPOfInitialMasterPods() {
     master_nodes_ip_port=""
     master_nodes_count=0
     for domain_name in $initial_master_nodes; do
-        checkIfRedisServerIsReady "$domain_name"
-        if [ $is_current_redis_server_running = false ]; then
+        checkIfValkeyServerIsReady "$domain_name"
+        if [ $is_current_valkey_server_running = false ]; then
             continue
         fi
 
         getIPPortOfPod "$domain_name"
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
         if [ -n "$cur_node_ip" ]; then
-            cur_node_ip_port="$cur_node_ip:$redis_database_port"
+            cur_node_ip_port="$cur_node_ip:$valkey_database_port"
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
             #log "Master" "Adding master $cur_node_ip_port"
@@ -249,14 +249,14 @@ createClusterOrWait() {
         findIPOfInitialMasterPods
         if [ "$master_nodes_count" -eq "$MASTER" ]; then
 
-            checkIfRedisClusterExist
-            if [ -n "$does_redis_cluster_exist" ]; then
-                if [ $does_redis_cluster_exist = false ]; then
+            checkIfValkeyClusterExist
+            if [ -n "$does_valkey_cluster_exist" ]; then
+                if [ $does_valkey_cluster_exist = false ]; then
                     for itr in $master_nodes_ip_port; do
                         set -- "$@" "$itr"
                     done
 
-                    RESP=$(echo "yes" | redis-cli $redis_args --cluster create "$@" --cluster-replicas 0)
+                    RESP=$(echo "yes" | valkey-cli $valkey_args --cluster create "$@" --cluster-replicas 0)
                     sleep 5
                     log "CREATE CLUSTER" "$RESP"
                     log "CLUSTER" "Successfully created cluster. Returning "
@@ -273,7 +273,7 @@ createClusterOrWait() {
 
 #---------------------------------------------- "Initially Join cluster as slave codes" -- start -----------------------------------------------------#
 
-# findMasterNodeIds() finds redis node IDs of using IP
+# findMasterNodeIds() finds valkey node IDs of using IP
 getNodeIDUsingIP() {
     nodes_ip_port="$1"
     #nodes_ip=${nodes_ip_port::-5}
@@ -303,7 +303,7 @@ getSelfShardMasterIpPort() {
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_ip_port
-    for domain_name in $redis_nodes; do
+    for domain_name in $valkey_nodes; do
 
         if contains "$domain_name" "$cur_shard_name"; then
             isNodeInTheCluster "$domain_name"
@@ -313,7 +313,7 @@ getSelfShardMasterIpPort() {
                 getIPPortOfPod "$domain_name"
                 # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
                 if [ -n "$cur_node_ip" ]; then
-                    cur_node_ip_port="$cur_node_ip:$redis_database_port"
+                    cur_node_ip_port="$cur_node_ip:$valkey_database_port"
                     shard_master_ip_port=$cur_node_ip_port
                     break
                 fi
@@ -329,9 +329,9 @@ joinCurrentNodeAsSlave() {
         log "SHARD" "Current shard master ip:port -> $shard_master_ip_port"
         getNodeIDUsingIP "$shard_master_ip_port"
         if [ -n "$current_node_id" ]; then
-            replica_ip_port="$POD_IP:$redis_database_port"
+            replica_ip_port="$POD_IP:$valkey_database_port"
 
-            RESP=$(redis-cli $redis_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
+            RESP=$(valkey-cli $valkey_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
             sleep 5
             log "ADD NODE" "$RESP"
         fi
@@ -348,8 +348,8 @@ joinClusterOrWait() {
             echo "Current node is inside the cluster. Returning"
             break
         fi
-        checkIfRedisClusterExist
-        if [ -n "$does_redis_cluster_exist" ] && [ $does_redis_cluster_exist = true ]; then
+        checkIfValkeyClusterExist
+        if [ -n "$does_valkey_cluster_exist" ] && [ $does_valkey_cluster_exist = true ]; then
             log "CLUSTER" "Joining myself as slave"
             joinCurrentNodeAsSlave
         fi
@@ -361,13 +361,13 @@ joinClusterOrWait() {
 #----------------------------------------- "Cluster Recovery When Pod Restart Codes" start -------------------------------------------------------#
 
 # When pod restarts we need to meet the new nodes as IP of pod is changed
-# We check if new redis node's ip is in old nodes.conf, if not
+# We check if new valkey node's ip is in old nodes.conf, if not
 # we meet this node with new node.
 
 meetWithNode() {
     domain_name="$1"
-    checkIfRedisServerIsReady "$domain_name"
-    if [ $is_current_redis_server_running = false ]; then
+    checkIfValkeyServerIsReady "$domain_name"
+    if [ $is_current_valkey_server_running = false ]; then
         log "MEET" "Server $domain_name is not running"
         return
     fi
@@ -379,7 +379,7 @@ meetWithNode() {
         update_nodes_conf "$POD_IP"
         if ! contains "$old_nodes_conf" "$cur_node_ip" || ! contains "$nodes_conf" "$cur_node_ip"; then
 
-            RESP=$(redis-cli -c -h "$POD_IP" $redis_args cluster meet "$cur_node_ip" "$redis_database_port")
+            RESP=$(valkey-cli -c -h "$POD_IP" $valkey_args cluster meet "$cur_node_ip" "$valkey_database_port")
             log "MEET" "Meet between $POD_IP and $cur_node_ip is $RESP"
         fi
     else
@@ -388,18 +388,18 @@ meetWithNode() {
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
 meetWithNewNodes() {
-    waitForAllRedisServersToBeReady 120
+    waitForAllValkeyServersToBeReady 120
     # cur_shard_name=${HOSTNAME::-2}
     # Removing last two characters
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
-    for domain_name in $redis_nodes; do
+    for domain_name in $valkey_nodes; do
         if contains "$domain_name" "$cur_shard_name"; then
             meetWithNode "$domain_name"
         fi
     done
 
-    for domain_name in $redis_nodes; do
+    for domain_name in $valkey_nodes; do
         meetWithNode "$domain_name"
     done
 }
@@ -409,20 +409,20 @@ checkNodeRole() {
     host="$1"
     unset node_role
 
-    node_info=$(redis-cli -h "$POD_IP" $redis_args info | grep role)
+    node_info=$(valkey-cli -h "$POD_IP" $valkey_args info | grep role)
     if [ -n "$node_info" ]; then
         node_role=$(echo "${node_info#"role:"}" | tr -cd '[:alnum:]._-')
     fi
 
     unset node_info
-    node_info=$(redis-cli -h "$POD_IP" $redis_args info | grep master_host)
+    node_info=$(valkey-cli -h "$POD_IP" $valkey_args info | grep master_host)
 
     if [ -n "$node_info" ]; then
         self_master_ip=$(echo "${node_info#"master_host:"}" | tr -cd '[:alnum:]._-')
     fi
 }
 
-# Only for slave nodes, this function retrieves master node id ( which is 40 chars long ) , from slave's nodes.conf (redis-cli cluster nodes)
+# Only for slave nodes, this function retrieves master node id ( which is 40 chars long ) , from slave's nodes.conf (valkey-cli cluster nodes)
 getMasterNodeIDForCurrentSlave() {
     unset current_slaves_master_id
     update_nodes_conf "$POD_IP"
@@ -450,8 +450,8 @@ getMasterNodeIDForCurrentSlave() {
     fi
 }
 
-# For slave nodes, sometimes after running cluster meet, redis node's nodes.conf is updated but
-# it continuously tries to ping old master. we check if the nodes has wrong info ( redis-cli info )
+# For slave nodes, sometimes after running cluster meet, valkey node's nodes.conf is updated but
+# it continuously tries to ping old master. we check if the nodes has wrong info ( valkey-cli info )
 # about it's master. If master_host does not match with nodes.conf, we cluster replicate
 # this node with master node's id .
 recoverClusterDuringPodRestart() {
@@ -470,7 +470,7 @@ recoverClusterDuringPodRestart() {
             log "RECOVER" "Master IP does not match with nodes.conf. Replicating myself again with master"
             getMasterNodeIDForCurrentSlave
 
-            RESP=$(redis-cli -c $redis_args cluster replicate "$current_slaves_master_id")
+            RESP=$(valkey-cli -c $valkey_args cluster replicate "$current_slaves_master_id")
             log "RECOVER" "Cluster Replicated with master . Status : $RESP"
         fi
     else
@@ -482,9 +482,9 @@ recoverClusterDuringPodRestart() {
 #If master count is less or equal to one , no cluster exist . Other wise cluster exist.
 #If cluster exist we want to join ourself in the cluster otherwise we create cluster
 #If the node has previous nodes.conf, we cluster meet with the new IPs and recover cluster state
-processRedisNode() {
+processValkeyNode() {
     if [ -n "$old_nodes_conf" ]; then
-        log "REDIS" "Pod restarting. Need to do CLUSTER MEET"
+        log "VALKEY" "Pod restarting. Need to do CLUSTER MEET"
         recoverClusterDuringPodRestart
     else
         lastChar=$(echo -n "$HOSTNAME" | tail -c 1)
@@ -500,7 +500,7 @@ processRedisNode() {
 loadInitData() {
     if [ -d "/init" ]; then
         log "INIT" "Init Directory Exists"
-        waitForAllRedisServersToBeReady 120
+        waitForAllValkeyServersToBeReady 120
         cd /init || true
         for file in /init/*
         do
@@ -511,34 +511,34 @@ loadInitData() {
                        ;;
                    *.lua)
                        log "INIT" "Running user provided initialization lua script $file"
-                       redis-cli -c $redis_args --eval "$file"
+                       valkey-cli -c $valkey_args --eval "$file"
                        ;;
                esac
         done
     fi
 }
 
-# --cluster-announce-ip command announces nodes ip to redis cluster and update nodes.conf file with updated ip
+# --cluster-announce-ip command announces nodes ip to valkey cluster and update nodes.conf file with updated ip
 # for replica failover
 # Solution Taken from : https://github.com/kubernetes/kubernetes/issues/57726#issuecomment-412467053
-# Redis server is started in the background. After doing cluster works it is taken back in in the foreground again
-startRedisServerInBackground() {
-    log "REDIS" "Started Redis Server In Background"
-    cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
-    redis_server_pid=$!
-    waitForAllRedisServersToBeReady 5
+# Valkey server is started in the background. After doing cluster works it is taken back in in the foreground again
+startValkeyServerInBackground() {
+    log "VALKEY" "Started Valkey Server In Background"
+    cp /usr/local/etc/valkey/default.conf /data/default.conf
+    exec valkey-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
+    valkey_server_pid=$!
+    waitForAllValkeyServersToBeReady 5
 }
 # entry Point of script
-runRedis() {
-    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version is 5 or 6 or 7. Using redis-cli commands"
+runValkey() {
+    log "VALKEY" "Hello. Start of Posix Shell Script. Valkey Version is 5 or 6 or 7. Using valkey-cli commands"
     setupInitialThings
-    startRedisServerInBackground
-    processRedisNode
+    startValkeyServerInBackground
+    processValkeyNode
     loadInitData
 
-    log "REDIS" "Bringing back redis server in foreground. Adios"
-    wait $redis_server_pid
+    log "VALKEY" "Bringing back valkey server in foreground. Adios"
+    wait $valkey_server_pid
 }
 args=$*
-runRedis
+runValkey

@@ -11,10 +11,10 @@ log() (
 )
 #Checks if auth password and tls certificate files exist on the node
 #if yes, add them on the argument string
-setUpRedisArgs() {
-    if [ "${REDISCLI_AUTH:-0}" != 0 ]; then
+setUpValkeyArgs() {
+    if [ "${VALKEYCLI_AUTH:-0}" != 0 ]; then
         log "ARGS" "Setting up Auth arguments"
-        auth_args="-a ${REDISCLI_AUTH} --no-auth-warning"
+        auth_args="-a ${VALKEYCLI_AUTH} --no-auth-warning"
     fi
 
     if [ "${TLS:-0}" = "ON" ]; then
@@ -30,29 +30,29 @@ setUpRedisArgs() {
 
         tls_args="--tls --cert $client_cert --key $client_key --cacert $ca_crt"
     fi
-    redis_args="$auth_args $tls_args"
+    valkey_args="$auth_args $tls_args"
 }
 
-checkIfRedisServerIsReady() {
+checkIfValkeyServerIsReady() {
     host="$1"
-    is_current_redis_server_running=false
+    is_current_valkey_server_running=false
 
-    RESP=$(redis-cli -h "$host" -p 6379 $redis_args ping 2>/dev/null)
+    RESP=$(valkey-cli -h "$host" -p 6379 $valkey_args ping 2>/dev/null)
     if [ "$RESP" = "PONG" ]; then
-        is_current_redis_server_running=true
+        is_current_valkey_server_running=true
     fi
 }
 
-waitForAllRedisServersToBeReady() (
-    log "INFO" "Wait for $1s for redis server to be ready"
+waitForAllValkeyServersToBeReady() (
+    log "INFO" "Wait for $1s for valkey server to be ready"
     maxTimeout=$1
     # shellcheck disable=SC2039
-    self_dns_name="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+    self_dns_name="$HOSTNAME.$VALKEY_GOVERNING_SERVICE"
 
     endTime=$(($(date +%s) + maxTimeout))
     while [ "$(date +%s)" -lt $endTime ]; do
-        checkIfRedisServerIsReady "$self_dns_name"
-        if [ "$is_current_redis_server_running" = true ]; then
+        checkIfValkeyServerIsReady "$self_dns_name"
+        if [ "$is_current_valkey_server_running" = true ]; then
             #log "INFO" "$domain_name is up"
             break
         fi
@@ -64,7 +64,7 @@ waitForAllRedisServersToBeReady() (
 loadInitData() {
     if [ -d "/init" ]; then
         log "INIT" "Init Directory Exists"
-        waitForAllRedisServersToBeReady 120
+        waitForAllValkeyServersToBeReady 120
         cd /init || true
         for file in /init/*
         do
@@ -75,30 +75,30 @@ loadInitData() {
                        ;;
                    *.lua)
                        log "INIT" "Running user provided initialization lua script $file"
-                       redis-cli $redis_args --eval "$file"
+                       valkey-cli $valkey_args --eval "$file"
                        ;;
                esac
         done
     fi
 }
 
-runRedisServerInBackground() {
+runValkeyServerInBackground() {
 
-    log "REDIS" "Started Redis Server In Background"
-    cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec redis-server /data/default.conf $args &
-    redis_server_pid=$!
+    log "VALKEY" "Started Valkey Server In Background"
+    cp /usr/local/etc/valkey/default.conf /data/default.conf
+    exec valkey-server /data/default.conf $args &
+    valkey_server_pid=$!
 }
 
-runRedis(){
+runValkey(){
 
-    setUpRedisArgs
-    runRedisServerInBackground
+    setUpValkeyArgs
+    runValkeyServerInBackground
     loadInitData
 
-    log "REDIS" "Bringing back redis server in foreground. Adios"
-    wait $redis_server_pid
+    log "VALKEY" "Bringing back valkey server in foreground. Adios"
+    wait $valkey_server_pid
 }
 
 args=$*
-runRedis
+runValkey

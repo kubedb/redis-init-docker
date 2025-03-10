@@ -27,7 +27,7 @@ function waitForPong() {
     log "INFO" "Trying to PING $HOSTNAME.$GOVERNING_SERVICE"
     while true; do
 
-        out=$(timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ${tls_args[@]} ping)
+        out=$(timeout 3 valkey-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ${tls_args[@]} ping)
         if [[ "$out" == "PONG" ]]; then
             break
         fi
@@ -40,14 +40,14 @@ function waitForPong() {
 function resetSentinel() {
     log "INFO" "resetting Sentinel $HOSTNAME..."
     waitForPong
-    timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ${tls_args[@]} SENTINEL RESET "*"
+    timeout 3 valkey-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ${tls_args[@]} SENTINEL RESET "*"
 }
 
 function setSentinelConf() {
     echo "sentinel announce-ip $HOSTNAME.$GOVERNING_SERVICE" >>/data/sentinel.conf
-    if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
-        echo "requirepass $REDISCLI_AUTH" >>/data/sentinel.conf
-        echo "masterauth $REDISCLI_AUTH" >>/data/sentinel.conf
+    if [[ "${VALKEYCLI_AUTH:-0}" != 0 ]]; then
+        echo "requirepass $VALKEYCLI_AUTH" >>/data/sentinel.conf
+        echo "masterauth $VALKEYCLI_AUTH" >>/data/sentinel.conf
     fi
 }
 
@@ -73,10 +73,10 @@ if [[ ! -f /data/sentinel.conf ]]; then
     log "DATA" "loading from /data/sentinel.conf"
     cp /scripts/sentinel.conf /data/sentinel.conf
     setSentinelConf
-    exec redis-sentinel /data/sentinel.conf $args
+    exec valkey-sentinel /data/sentinel.conf $args
 else
     log "DATA" "loading from raw conf"
-    exec redis-sentinel /data/sentinel.conf $args &
+    exec valkey-sentinel /data/sentinel.conf $args &
     pid=$!
     resetSentinel
     wait $pid
