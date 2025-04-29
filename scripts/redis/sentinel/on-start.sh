@@ -61,7 +61,7 @@ function setUpInitialThings() {
     sentinel_quorum_val=$(((sentinel_replica_count + 1) / 2))
     cp /usr/local/etc/redis/default.conf /data/default.conf
 
-    echo "replica-announce-ip $HOSTNAME.$REDIS_GOVERNING_SERVICE" >>/data/default.conf
+    echo "replica-announce-ip $HOSTNAME.$DATABASE_GOVERNING_SERVICE" >>/data/default.conf
 }
 
 function waitForSentinelToBeReady() {
@@ -145,7 +145,7 @@ function waitToSyncSentinelConfig() {
             log "INFO" "No replica available yet"
             resetSentinel "$SENTINEL_NAME-$j"
         else
-            findSDownStateForAllReplicasInfo "$HOSTNAME.$REDIS_GOVERNING_SERVICE" "$REPLICAS_INFO_FROM_SENTINEL"
+            findSDownStateForAllReplicasInfo "$HOSTNAME.$DATABASE_GOVERNING_SERVICE" "$REPLICAS_INFO_FROM_SENTINEL"
             if [ "$s_down" == "true" ]; then
                 resetSentinel "$SENTINEL_NAME-$j"
             fi
@@ -252,11 +252,11 @@ not_exists_dns_entry() {
     # Gets IP of host pod
     myip=$(hostname -i)
 
-    log "INFO" "Check if $REDIS_GOVERNING_SERVICE contains the IP of this pod: ${myip}"
-    if [[ -z "$(getent ahosts "$REDIS_GOVERNING_SERVICE" | grep "^${myip}")" ]]; then
+    log "INFO" "Check if $DATABASE_GOVERNING_SERVICE contains the IP of this pod: ${myip}"
+    if [[ -z "$(getent ahosts "$DATABASE_GOVERNING_SERVICE" | grep "^${myip}")" ]]; then
         flag=1
     else
-        log "INFO" "$REDIS_GOVERNING_SERVICE has my IP: ${myip}"
+        log "INFO" "$DATABASE_GOVERNING_SERVICE has my IP: ${myip}"
         flag=0
     fi
 }
@@ -295,12 +295,12 @@ getMasterHost
 args=$@
 if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
     log "INFO" "Initializing Redis server for the first time..."
-    self="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
-    if [[ $HOSTNAME == "$REDIS_NAME-0" ]]; then
+    self="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
+    if [[ $HOSTNAME == "$DATABASE_NAME-0" ]]; then
         exec redis-server /data/default.conf $args &
         pid=$!
         waitForRedisToBeReady $self
-        addConfigurationWithAllSentinel "$REDIS_NAME-0.$REDIS_GOVERNING_SERVICE"
+        addConfigurationWithAllSentinel "$DATABASE_NAME-0.$DATABASE_GOVERNING_SERVICE"
     else
         while true; do
             # This is a replica node so we master should be configured by now
@@ -319,7 +319,7 @@ if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
     fi
 else
     log "INFO" "Got master info from sentinel"
-    self="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+    self="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
     if [ "$self" != "${REDIS_MASTER_DNS:-0}" ]; then
         log "INFO" "Checking if $REDIS_MASTER_DNS ready as primary!"
         waitForRedisToBeReady $REDIS_MASTER_DNS
@@ -342,7 +342,7 @@ fi
 CheckIfMasterIsNotInSDownState
 waitToSyncSentinelConfig
 
-self="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+self="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
 waitForRedisToBeReady $self
 
 loadInitData

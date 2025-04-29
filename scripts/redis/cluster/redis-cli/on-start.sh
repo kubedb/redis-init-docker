@@ -54,9 +54,9 @@ loadOldNodesConfIfExist() {
 getDataFromRedisNodeFinder() {
     master_file_name="master.txt"
     slave_file_name="slave.txt"
-    redis_nodes_file_name="redis-nodes.txt"
+    redis_nodes_file_name="db-nodes.txt"
     initial_master_nodes_file_name="initial-master-nodes.txt"
-    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --redis-nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
+    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
     MASTER=$(cat "/tmp/$master_file_name")
     REPLICAS=$(cat "/tmp/$slave_file_name")
     redis_nodes=$(cat "/tmp/$redis_nodes_file_name")
@@ -203,7 +203,7 @@ checkIfRedisClusterExist() {
                 break
             else
                 # shellcheck disable=SC2039
-                self_dns_name="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+                self_dns_name="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
                 if [ "$self_dns_name" != "$domain_name" ]; then
                     does_redis_cluster_exist=false
                 fi

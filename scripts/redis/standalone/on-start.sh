@@ -47,7 +47,7 @@ waitForAllRedisServersToBeReady() (
     log "INFO" "Wait for $1s for redis server to be ready"
     maxTimeout=$1
     # shellcheck disable=SC2039
-    self_dns_name="$HOSTNAME.$REDIS_GOVERNING_SERVICE"
+    self_dns_name="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
 
     endTime=$(($(date +%s) + maxTimeout))
     while [ "$(date +%s)" -lt $endTime ]; do
