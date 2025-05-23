@@ -479,7 +479,101 @@ processRedisNode() {
 startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
+#    epargs = ()
+#    if [ -z "${OUR_ENDPOINTS}" ]; then
+#      epargs+= ("--cluster-announce-ip" "${POD_IP}")
+#    else
+#      IFS=',' read -r -a OUR_ENDPOINTS_A <<< "$OUR_ENDPOINTS"
+#      IFS=',' read -r -a OUR_PORTS_A <<< "$OUR_PORTS"
+#      # Extract shard and replica using parameter expansion
+#      shard=$(echo "$HOSTNAME" | grep -o 'shard[0-9]\+' | grep -o '[0-9]\+')
+#      replica=${HOSTNAME##*-}  # Remove everything before the last '-'
+#      id = $((shard * REPLICAS + replica))
+#      epargs+= ("--cluster-announce-hostname" "${OUR_ENDPOINTS_A[$id]}" --cluster-announce-port "${OUR_PORTS_A[$id]}")
+#    fi
+#    exec redis-server /data/default.conf "${epargs[@]}" $args &
+
+  # Initialize epargs as a space-separated string
+  epargs=""
+
+  # Ensure required environment variables are set
+  if [ -z "$HOSTNAME" ]; then
+      echo "Error: HOSTNAME is not set" >&2
+      exit 1
+  fi
+  if [ -z "$POD_IP" ] && [ -z "$OUR_ENDPOINTS" ]; then
+      echo "Error: Neither POD_IP nor OUR_ENDPOINTS is set" >&2
+      exit 1
+  fi
+
+  if [ -z "$OUR_ENDPOINTS" ]; then
+      # Use POD_IP if OUR_ENDPOINTS is not set
+      epargs="--cluster-announce-ip $POD_IP"
+  else
+      # Convert comma-separated strings to space-separated lists
+      # Save original IFS and set to comma
+      OLD_IFS="$IFS"
+      IFS=','
+      # Use set to split OUR_ENDPOINTS and OUR_PORTS
+      set -- $OUR_ENDPOINTS
+      OUR_ENDPOINTS_LIST="$*"
+      set -- $OUR_PORTS
+      OUR_PORTS_LIST="$*"
+      IFS="$OLD_IFS"
+
+      # Count elements in OUR_ENDPOINTS_LIST to validate length
+      set -- $OUR_ENDPOINTS_LIST
+      endpoints_count=$#
+      set -- $OUR_PORTS_LIST
+      ports_count=$#
+
+      # Check if lists have the same length
+      if [ "$endpoints_count" -ne "$ports_count" ]; then
+          echo "Error: OUR_ENDPOINTS and OUR_PORTS have different lengths" >&2
+          exit 1
+      fi
+
+      # Extract shard and replica from HOSTNAME
+      shard=$(echo "$HOSTNAME" | grep -o 'shard[0-9]\+' | grep -o '[0-9]\+' || echo "")
+      replica=$(echo "$HOSTNAME" | sed 's/.*-//')
+
+      # Validate shard and replica are numeric
+      case "$shard" in
+          ''|*[!0-9]*)
+              echo "Error: Invalid shard extracted from HOSTNAME ($HOSTNAME)" >&2
+              exit 1
+              ;;
+      esac
+      case "$replica" in
+          ''|*[!0-9]*)
+              echo "Error: Invalid replica extracted from HOSTNAME ($HOSTNAME)" >&2
+              exit 1
+              ;;
+      esac
+
+      # Compute id = shard * REPLICAS + replica
+      id=$(expr $shard "*" $REPLICAS + $replica)
+
+      # Check if id is within bounds (1-based indexing for set)
+      if [ "$id" -ge "$endpoints_count" ]; then
+          echo "Error: Computed id ($id) exceeds list length ($endpoints_count)" >&2
+          exit 1
+      fi
+
+      # Extract the nth element from OUR_ENDPOINTS_LIST and OUR_PORTS_LIST
+      set -- $OUR_ENDPOINTS_LIST
+      shift $id
+      endpoint="$1"
+      set -- $OUR_PORTS_LIST
+      shift $id
+      port="$1"
+
+      # Add cluster announce arguments to epargs
+      epargs="--cluster-announce-hostname $endpoint --cluster-announce-port $port"
+  fi
+
+  # Start redis-server (run in foreground for Kubernetes)
+  exec redis-server /data/default.conf $epargs $args &
     redis_server_pid=$!
     waitForAllRedisServersToBeReady 5
 }

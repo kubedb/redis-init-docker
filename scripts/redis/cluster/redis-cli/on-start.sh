@@ -63,14 +63,47 @@ getDataFromRedisNodeFinder() {
     initial_master_nodes=$(cat "/tmp/$initial_master_nodes_file_name")
     log "REDIS" "${redis_nodes}"
     log "REDIS" "Master : $MASTER , Slave : $REPLICAS"
+
+    pod_index=$(echo "$HOSTNAME" | sed 's/.*-//')
+    shard_no=$(echo "$HOSTNAME" | grep -o 'shard[0-9]\+' | grep -o '[0-9]\+')
+    pod_index=$(($shard_no * $REPLICAS_COUNT + $pod_index))
+
+    if [ ! -z "$OUR_ENDPOINTS_MASTER"] ]; then
+        initial_master_nodes=$(echo "$OUR_ENDPOINTS_MASTER" | tr ',' '\n')
+        initial_master_nodes=$(echo "$initial_master_nodes" | tr '\n' ' ')
+        log "REDIS" "Using OUR_ENDPOINTS_MASTER : $initial_master_nodes"
+    fi
+    if [ ! -z "$OUR_ENDPOINTS" ]; then
+        redis_nodes=$(echo "$OUR_ENDPOINTS" | tr ',' '\n')
+        log "REDIS" "Using OUR_ENDPOINTS : $redis_nodes"
+        ips=$(echo "$redis_nodes" | tr '\n' ' ')
+        export POD_IP=$(echo "$ips" | cut -d' ' -f$((pod_index + 1)))
+    fi
+
 }
+
 setupInitialThings() {
     script_name=${0##*/}
 
     readonly node_flag_master="master"
     readonly node_flag_slave="slave"
     readonly node_flag_myself="myself"
-    readonly redis_database_port="6379"
+    redis_database_port="6379"
+    ports=""
+    ports_master=""
+
+    pod_index=$(echo "$HOSTNAME" | sed 's/.*-//')
+    shard_no=$(echo "$HOSTNAME" | grep -o 'shard[0-9]\+' | grep -o '[0-9]\+')
+    pod_index=$(($shard_no * $REPLICAS_COUNT + $pod_index))
+    if [ ! -z "$OUR_PORTS" ]; then
+        ports=$(echo "$OUR_PORTS" | tr ',' '\n' | grep -Eo '[0-9]+')
+        log "------jdfgjhjg $ports"
+        ports=$(echo "$ports" | tr '\n' ' ')
+        log "------jdfgjhjg $ports"
+        redis_database_port=$(echo "$ports" | cut -d' ' -f$((pod_index + 1)))
+        ports_master=$(echo "$OUR_PORTS_MASTER" | tr ',' '\n' | grep -Eo '[0-9]+')
+        ports_master=$(echo "$ports_master" | tr '\n' ' ')
+    fi
 
     loadOldNodesConfIfExist
     getDataFromRedisNodeFinder
@@ -88,9 +121,10 @@ getIPPortOfPod() {
 
 checkIfRedisServerIsReady() {
     host="$1"
+    port="$2"
     is_current_redis_server_running=false
 
-    RESP=$(redis-cli -h "$host" -p 6379 $redis_args ping 2>/dev/null)
+    RESP=$(redis-cli -h "$host" -p "$port" $redis_args ping 2>/dev/null)
     if [ "$RESP" = "PONG" ]; then
         is_current_redis_server_running=true
     fi
@@ -98,10 +132,11 @@ checkIfRedisServerIsReady() {
 # Updating nodes_conf var which contains cluster nodes. the argument is exec node, executing which we get cluster nodes
 update_nodes_conf() {
     host="$1"
-    checkIfRedisServerIsReady "$host"
+    port="$2"
+    checkIfRedisServerIsReady "$host" "$port"
     unset nodes_conf
     if [ "$is_current_redis_server_running" = true ]; then
-        nodes_conf=$(redis-cli -h "$host" -p 6379 $redis_args cluster nodes)
+        nodes_conf=$(redis-cli -h "$host" -p "$port" $redis_args cluster nodes)
     fi
 }
 # Wait for current redis servers discovered by node-finder to be up and ready to accept connections and form cluster
@@ -109,10 +144,13 @@ update_nodes_conf() {
 waitForAllRedisServersToBeReady() (
     log "INFO" "Wait for $1s for each redis server to be ready"
     maxTimeout=$1
+    it=0
     for domain_name in $redis_nodes; do
+        temp_port=$(echo "$ports" | cut -d' ' -f$((it + 1)))
+        it=$((it + 1))
         endTime=$(($(date +%s) + maxTimeout))
         while [ "$(date +%s)" -lt $endTime ]; do
-            checkIfRedisServerIsReady "$domain_name"
+            checkIfRedisServerIsReady "$domain_name" "$temp_port"
             if [ "$is_current_redis_server_running" = true ]; then
                 #log "INFO" "$domain_name is up"
                 break
@@ -139,7 +177,7 @@ contains() {
 checkCurrentNodesStatus() {
     current_host="$1"
     node_flag="$2"
-    update_nodes_conf "$current_host"
+    update_nodes_conf "$current_host" "$3"
     unset current_nodes_checked_status
     temp_file=$(mktemp)
     printf '%s\n' "$nodes_conf" >"$temp_file"
@@ -157,14 +195,15 @@ checkCurrentNodesStatus() {
 countFlagInNodesConf() {
     host="$1"
     flag="$2"
-    update_nodes_conf "$host"
+    port="$3"
+    update_nodes_conf "$host" "$port"
     unset given_flag_count
     if [ -n "$nodes_conf" ]; then
         given_flag_count=$(echo "$nodes_conf" | tr " " "\n" | grep -c "$flag")
     fi
 }
 countMasterInNodeConf() {
-    countFlagInNodesConf "$1" "$node_flag_master"
+    countFlagInNodesConf "$1" "$node_flag_master" "$2"
     unset cluster_master_cnt
     if [ -n "$given_flag_count" ]; then
         cluster_master_cnt=$given_flag_count
@@ -174,11 +213,12 @@ countMasterInNodeConf() {
 # If more than master exist in cluster nodes commands that means the node is in the cluster
 isNodeInTheCluster() {
     host="$1"
+    port="$2"
     unset is_current_node_in_cluster
-    checkIfRedisServerIsReady "$host"
+    checkIfRedisServerIsReady "$host" "$port"
 
     if [ "$is_current_redis_server_running" = true ]; then
-        countMasterInNodeConf "$host"
+        countMasterInNodeConf "$host" "$port"
         if [ -n "$cluster_master_cnt" ]; then
             if [ "$cluster_master_cnt" -gt 1 ]; then
                 is_current_node_in_cluster=true
@@ -193,8 +233,12 @@ isNodeInTheCluster() {
 # anything about cluster. If no node knows then cluster does not exist
 checkIfRedisClusterExist() {
     unset does_redis_cluster_exist
+    it=0
     for domain_name in $redis_nodes; do
-        isNodeInTheCluster "$domain_name"
+        temp_port=$(echo "$ports" | cut -d' ' -f$((it + 1)))
+        it=$((it + 1))
+        isNodeInTheCluster "$domain_name" "$temp_port"
+        log "Current node in cluster $is_current_node_in_cluster $domain_name $temp_port"
 
         if [ -n "$is_current_node_in_cluster" ]; then
             if [ "$is_current_node_in_cluster" = true ]; then
@@ -205,7 +249,8 @@ checkIfRedisClusterExist() {
                 # shellcheck disable=SC2039
                 self_dns_name="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
                 if [ "$self_dns_name" != "$domain_name" ]; then
-                    does_redis_cluster_exist=false
+                  log "HAHAAAAAAAAAAAAAAAA"
+#                    does_redis_cluster_exist=false
                 fi
             fi
         fi
@@ -222,8 +267,12 @@ checkIfRedisClusterExist() {
 findIPOfInitialMasterPods() {
     master_nodes_ip_port=""
     master_nodes_count=0
+    it=0
     for domain_name in $initial_master_nodes; do
-        checkIfRedisServerIsReady "$domain_name"
+        temp_port=$(echo "$ports_master" | cut -d' ' -f$((it + 1)))
+        it=$((it + 1))
+        checkIfRedisServerIsReady "$domain_name" "$temp_port"
+        log "$domain_name is current redis server running $is_current_redis_server_running $domain_name $temp_port"
         if [ $is_current_redis_server_running = false ]; then
             continue
         fi
@@ -281,7 +330,7 @@ getNodeIDUsingIP() {
     nodes_ip=$(echo "$nodes_ip_port" | rev | cut -c 6- | rev)
 
     unset current_node_id
-    update_nodes_conf "$nodes_ip"
+    update_nodes_conf "$nodes_ip" "$redis_database_port"
 
     temp_file=$(mktemp)
     printf '%s\n' "$nodes_conf" >"$temp_file"
@@ -303,11 +352,14 @@ getSelfShardMasterIpPort() {
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_ip_port
+    it=0
     for domain_name in $redis_nodes; do
+      temp_port=$(echo "$ports" | cut -d' ' -f$((it + 1)))
+      it=$((it + 1))
 
         if contains "$domain_name" "$cur_shard_name"; then
-            isNodeInTheCluster "$domain_name"
-            checkCurrentNodesStatus "$domain_name" "$node_flag_master"
+            isNodeInTheCluster "$domain_name" "$temp_port"
+            checkCurrentNodesStatus "$domain_name" "$node_flag_master" "$temp_port"
             # To be shard master, current node should be in the cluster and it should be in master node
             if [ -n "$is_current_node_in_cluster" ] && [ $is_current_node_in_cluster = true ] && [ -n "$current_nodes_checked_status" ] && [ $current_nodes_checked_status = true ]; then
                 getIPPortOfPod "$domain_name"
@@ -342,13 +394,17 @@ joinCurrentNodeAsSlave() {
 joinClusterOrWait() {
     while true; do
         # Check if myself is in the cluster
-        isNodeInTheCluster "$POD_IP"
+        isNodeInTheCluster "$POD_IP" "$redis_database_port"
+        log "CLUSTER" "Myself in cluster $is_current_node_in_cluster $POD_IP $redis_database_port"
 
         if [ -n "$is_current_node_in_cluster" ] && [ $is_current_node_in_cluster = true ]; then
             echo "Current node is inside the cluster. Returning"
             break
         fi
         checkIfRedisClusterExist
+
+        log "CLUSTER" "Redis Cluster Exist $does_redis_cluster_exist $POD_IP $redis_database_port"
+
         if [ -n "$does_redis_cluster_exist" ] && [ $does_redis_cluster_exist = true ]; then
             log "CLUSTER" "Joining myself as slave"
             joinCurrentNodeAsSlave
@@ -366,7 +422,7 @@ joinClusterOrWait() {
 
 meetWithNode() {
     domain_name="$1"
-    checkIfRedisServerIsReady "$domain_name"
+    checkIfRedisServerIsReady "$domain_name" "$2"
     if [ $is_current_redis_server_running = false ]; then
         log "MEET" "Server $domain_name is not running"
         return
@@ -376,7 +432,7 @@ meetWithNode() {
     # If cur_node_ip_port is set. We retrieved IP:Port of the pod successfully.
     if [ -n "$cur_node_ip" ]; then
         # If Current node ip does not exist in old nodes.conf , need to introduce them
-        update_nodes_conf "$POD_IP"
+        update_nodes_conf "$POD_IP" "$redis_database_port"
         if ! contains "$old_nodes_conf" "$cur_node_ip" || ! contains "$nodes_conf" "$cur_node_ip"; then
 
             RESP=$(redis-cli -c -h "$POD_IP" $redis_args cluster meet "$cur_node_ip" "$redis_database_port")
@@ -393,14 +449,20 @@ meetWithNewNodes() {
     # Removing last two characters
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
+    it=0
     for domain_name in $redis_nodes; do
+        temp_port=$(echo "$ports" | cut -d' ' -f$((it + 1)))
+        it=$((it + 1))
         if contains "$domain_name" "$cur_shard_name"; then
-            meetWithNode "$domain_name"
+            meetWithNode "$domain_name" "$temp_port"
         fi
     done
 
+    it=0
     for domain_name in $redis_nodes; do
-        meetWithNode "$domain_name"
+        temp_port=$(echo "$ports" | cut -d' ' -f$((it + 1)))
+        it=$((it + 1))
+        meetWithNode "$domain_name" "$temp_port"
     done
 }
 
@@ -425,7 +487,7 @@ checkNodeRole() {
 # Only for slave nodes, this function retrieves master node id ( which is 40 chars long ) , from slave's nodes.conf (redis-cli cluster nodes)
 getMasterNodeIDForCurrentSlave() {
     unset current_slaves_master_id
-    update_nodes_conf "$POD_IP"
+    update_nodes_conf "$POD_IP" "$redis_database_port"
 
     temp_file=$(mktemp)
     printf '%s\n' "$nodes_conf" >"$temp_file"
@@ -465,7 +527,7 @@ recoverClusterDuringPodRestart() {
 
     if [ "$node_role" = "${node_flag_slave}" ]; then
         log "RECOVER" "Master IP is : $self_master_ip"
-        update_nodes_conf "$POD_IP"
+        update_nodes_conf "$POD_IP" "$redis_database_port"
         if ! contains "$nodes_conf" "$self_master_ip"; then
             log "RECOVER" "Master IP does not match with nodes.conf. Replicating myself again with master"
             getMasterNodeIDForCurrentSlave
@@ -525,14 +587,57 @@ loadInitData() {
 startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
+    epargs=""
+    if [ -z "${OUR_ENDPOINTS}" ]; then
+      epargs="--cluster-announce-ip" "${POD_IP}"
+    else
+      # Extract shard using grep and cut (POSIX-compliant)
+      shard=$(echo "$HOSTNAME" | grep -o 'shard[0-9]\+' | grep -o '[0-9]\+')
+
+      # Extract replica (get substring after last '-')
+      replica=$(echo "$HOSTNAME" | sed 's/.*-//')
+
+      # Calculate rid
+      rid=$(($shard * $REPLICAS_COUNT + $replica))
+
+      # Convert comma-separated OUR_ENDPOINTS to space-separated list and extract element
+      # Extract endpoint using awk with proper 1-based indexing
+      endpoint=$(echo "$OUR_ENDPOINTS" | awk -F',' -v idx="$((rid + 1))" '{print $idx}')
+
+      # Build epargs as a space-separated string
+      epargs="--cluster-preferred-endpoint-type hostname --cluster-announce-hostname "$endpoint" --cluster-announce-port $redis_database_port --port $redis_database_port"
+    fi
+  log "$epargs"
+  exec redis-server /data/default.conf $epargs $args &
     redis_server_pid=$!
     waitForAllRedisServersToBeReady 5
 }
+
+printAllthings() {
+  log "-----------------------------------------------"
+  log "Redis Nodes : $redis_nodes"
+  log "Initial Master Nodes : $initial_master_nodes"
+  log "Master Count : $MASTER"
+  log "Replica Count : $REPLICAS"
+  log "Shard No : $shard_no"
+  log "Pod Index : $pod_index"
+  log "Pod IP : $POD_IP"
+  log "Pod Name : $HOSTNAME"
+  log "Pod Port : $redis_database_port"
+  log "OUR_ENDPOINTS: $OUR_ENDPOINTS"
+  log "OUR_ENDPOINTS_MASTER $OUR_ENDPOINTS_MASTER"
+  log "OUR_PORTS $OUR_PORTS"
+  log "OUR_PORTS_MASTER $OUR_PORTS_MASTER"
+  log "ports $ports"
+  log "ports_master : $ports_master"
+  log "-----------------------------------------------"
+}
+
 # entry Point of script
 runRedis() {
     log "REDIS" "Hello. Start of Posix Shell Script. Redis Version is 5 or 6 or 7. Using redis-cli commands"
     setupInitialThings
+    printAllthings
     startRedisServerInBackground
     processRedisNode
     loadInitData
