@@ -75,7 +75,7 @@ if [[ ! -f /data/sentinel.conf ]]; then
     setSentinelConf
     exec redis-sentinel /data/sentinel.conf $args
 else
-    log "DATA" "Creating fresh sentinel.conf"
+    log "DATA" "loading from /data/sentinel.conf"
     cp /scripts/sentinel.conf /data/sentinel.conf
     setSentinelConf
     exec redis-sentinel /data/sentinel.conf $args &
