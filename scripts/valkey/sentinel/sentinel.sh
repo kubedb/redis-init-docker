@@ -75,7 +75,9 @@ if [[ ! -f /data/sentinel.conf ]]; then
     setSentinelConf
     exec valkey-sentinel /data/sentinel.conf $args
 else
-    log "DATA" "loading from raw conf"
+    log "DATA" "loading from /data/sentinel.conf"
+    cp /scripts/sentinel.conf /data/sentinel.conf
+    setSentinelConf
     exec valkey-sentinel /data/sentinel.conf $args &
     pid=$!
     resetSentinel
