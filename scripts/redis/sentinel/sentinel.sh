@@ -43,6 +43,14 @@ function resetSentinel() {
     timeout 3 redis-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ${tls_args[@]} SENTINEL RESET "*"
 }
 
+function updatePassword() {
+    sed -i 's/^requirepass .*/requirepass "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
+    sed -i 's/^masterauth .*/masterauth "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
+}
+function deleteExistingHashPass(){
+    sed -i '/^user default on sanitize-payload #.*$/d' /data/sentinel.conf
+}
+
 function setSentinelConf() {
     echo "sentinel announce-ip $HOSTNAME.$GOVERNING_SERVICE" >>/data/sentinel.conf
     if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
@@ -75,9 +83,10 @@ if [[ ! -f /data/sentinel.conf ]]; then
     setSentinelConf
     exec redis-sentinel /data/sentinel.conf $args
 else
-    log "DATA" "loading from /data/sentinel.conf"
-    cp /scripts/sentinel.conf /data/sentinel.conf
-    setSentinelConf
+    log "DATA" "Updating conf file with new password"
+    deleteExistingHashPass
+    updatePassword
+
     exec redis-sentinel /data/sentinel.conf $args &
     pid=$!
     resetSentinel
