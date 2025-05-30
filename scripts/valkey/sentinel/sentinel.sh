@@ -1,4 +1,7 @@
 #!/bin/bash
+
+sentinel_sanitize_config="user default on sanitize-payload"
+
 function timestamp() {
     date +"%Y/%m/%d %T"
 }
@@ -43,6 +46,14 @@ function resetSentinel() {
     timeout 3 valkey-cli -h "$HOSTNAME.$GOVERNING_SERVICE" -p 26379 ${tls_args[@]} SENTINEL RESET "*"
 }
 
+function updatePassword() {
+    sed -i 's/^requirepass .*/requirepass "'"$VALKEYCLI_AUTH"'"/' /data/sentinel.conf
+    sed -i 's/^primaryauth .*/primaryauth "'"$VALKEYCLI_AUTH"'"/' /data/sentinel.conf
+}
+function deleteExistingHashPass(){
+    sed -i "/^$sentinel_sanitize_config #.*$/d" /data/sentinel.conf
+}
+
 function setSentinelConf() {
     echo "sentinel announce-ip $HOSTNAME.$GOVERNING_SERVICE" >>/data/sentinel.conf
     if [[ "${VALKEYCLI_AUTH:-0}" != 0 ]]; then
@@ -73,11 +84,13 @@ if [[ ! -f /data/sentinel.conf ]]; then
     log "DATA" "loading from /data/sentinel.conf"
     cp /scripts/sentinel.conf /data/sentinel.conf
     setSentinelConf
+
     exec valkey-sentinel /data/sentinel.conf $args
 else
-    log "DATA" "loading from /data/sentinel.conf"
-    cp /scripts/sentinel.conf /data/sentinel.conf
-    setSentinelConf
+    log "DATA" "Restarting with new sentinel.conf"
+    deleteExistingHashPass
+    updatePassword
+
     exec valkey-sentinel /data/sentinel.conf $args &
     pid=$!
     resetSentinel
