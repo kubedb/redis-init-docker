@@ -41,7 +41,7 @@ loadOldNodesConfIfExist() {
         old_master_cnt=$(echo "$old_nodes_conf" | tr " " "\n" | grep -c "master")
         log "Old nodes.conf" "Master Count : $old_master_cnt"
         if [ "$old_master_cnt" -lt 3 ]; then
-            log "CLUSTER" "Discarding OLD Cluster INfo. Not sufficient info to recover"
+            log "CLUSTER" "Discarding OLD Cluster Info. Not sufficient info to recover"
             unset old_nodes_conf
         fi
     else
@@ -52,9 +52,9 @@ loadOldNodesConfIfExist() {
 # redis-node-finder binary gets updated master and replica count and write the data in /tmp directory
 # We read those data from /tmp directory and use them
 getDataFromRedisNodeFinder() {
-    master_file_name="master.txt"
-    slave_file_name="slave.txt"
-    redis_nodes_file_name="db-nodes.txt"
+    master_file_name="master-count.txt"
+    slave_file_name="slave-count.txt"
+    redis_endpoints="db-endpoints.txt"
     initial_master_nodes_file_name="initial-master-nodes.txt"
     cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
     MASTER=$(cat "/tmp/$master_file_name")
@@ -70,7 +70,6 @@ setupInitialThings() {
     readonly node_flag_master="master"
     readonly node_flag_slave="slave"
     readonly node_flag_myself="myself"
-    readonly redis_database_port="6379"
 
     loadOldNodesConfIfExist
     getDataFromRedisNodeFinder
