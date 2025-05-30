@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SENTINEL_SANITIZE_CONFIG="user default on sanitize-payload"
+sentinel_sanitize_config="user default on sanitize-payload"
 
 function timestamp() {
     date +"%Y/%m/%d %T"
@@ -51,7 +51,7 @@ function updatePassword() {
     sed -i 's/^masterauth .*/masterauth "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
 }
 function deleteExistingHashPass(){
-    sed -i "/^$SENTINEL_SANITIZE_CONFIG #.*$/d" /data/sentinel.conf
+    sed -i "/^$sentinel_sanitize_config #.*$/d" /data/sentinel.conf
 }
 
 function setSentinelConf() {
