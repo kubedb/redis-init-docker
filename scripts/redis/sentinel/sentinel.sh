@@ -1,4 +1,7 @@
 #!/bin/bash
+
+SENTINEL_SANITIZE_CONFIG="user default on sanitize-payload"
+
 function timestamp() {
     date +"%Y/%m/%d %T"
 }
@@ -48,7 +51,7 @@ function updatePassword() {
     sed -i 's/^masterauth .*/masterauth "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
 }
 function deleteExistingHashPass(){
-    sed -i '/^user default on sanitize-payload #.*$/d' /data/sentinel.conf
+    sed -i "/^$SENTINEL_SANITIZE_CONFIG #.*$/d" /data/sentinel.conf
 }
 
 function setSentinelConf() {
@@ -83,7 +86,7 @@ if [[ ! -f /data/sentinel.conf ]]; then
     setSentinelConf
     exec redis-sentinel /data/sentinel.conf $args
 else
-    log "DATA" "Updating conf file with new password"
+    log "DATA" "Restarting with new sentinel.conf"
     deleteExistingHashPass
     updatePassword
 

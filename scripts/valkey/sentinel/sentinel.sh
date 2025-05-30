@@ -1,4 +1,7 @@
 #!/bin/bash
+
+SENTINEL_SANITIZE_CONFIG="user default on sanitize-payload"
+
 function timestamp() {
     date +"%Y/%m/%d %T"
 }
@@ -44,11 +47,11 @@ function resetSentinel() {
 }
 
 function updatePassword() {
-    sed -i 's/^requirepass .*/requirepass "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
-    sed -i 's/^masterauth .*/masterauth "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
+    sed -i 's/^requirepass .*/requirepass "'"$VALKEYCLI_AUTH"'"/' /data/sentinel.conf
+    sed -i 's/^primaryauth .*/primaryauth "'"$VALKEYCLI_AUTH"'"/' /data/sentinel.conf
 }
 function deleteExistingHashPass(){
-    sed -i '/^user default on sanitize-payload #.*$/d' /data/sentinel.conf
+    sed -i "/^$SENTINEL_SANITIZE_CONFIG #.*$/d" /data/sentinel.conf
 }
 
 function setSentinelConf() {
@@ -81,9 +84,10 @@ if [[ ! -f /data/sentinel.conf ]]; then
     log "DATA" "loading from /data/sentinel.conf"
     cp /scripts/sentinel.conf /data/sentinel.conf
     setSentinelConf
+
     exec valkey-sentinel /data/sentinel.conf $args
 else
-    log "DATA" "Updating conf file with new password"
+    log "DATA" "Restarting with new sentinel.conf"
     deleteExistingHashPass
     updatePassword
 
