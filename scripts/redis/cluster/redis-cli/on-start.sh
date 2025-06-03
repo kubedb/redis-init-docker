@@ -60,7 +60,7 @@ getDataFromRedisNodeFinder() {
     cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --nodes-file="$redis_endpoints" --initial-master-file="$initial_master_nodes_file_name" --endpoint-type-file="$endpoint_type_file_name"
     MASTER=$(cat "/tmp/$master_file_name")
     REPLICAS=$(cat "/tmp/$slave_file_name")
-    redis_nodes=$(cat "/tmp/$redis_nodes_file_name")
+    redis_nodes=$(cat "/tmp/$redis_endpoints")
     initial_master_nodes=$(cat "/tmp/$initial_master_nodes_file_name")
     endpoint_type=$(cat "/tmp/$endpoint_type_file_name")
     log "REDIS" "${redis_nodes}"
