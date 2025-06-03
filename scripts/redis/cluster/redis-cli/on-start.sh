@@ -56,11 +56,13 @@ getDataFromRedisNodeFinder() {
     slave_file_name="slave-count.txt"
     redis_endpoints="db-endpoints.txt"
     initial_master_nodes_file_name="initial-master-nodes.txt"
-    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --nodes-file="$redis_nodes_file_name" --initial-master-file="$initial_master_nodes_file_name"
+    endpoint_type_file_name="endpoint-type.txt"
+    cd /scripts && ./redis-node-finder run --mode="cluster" --master-file="$master_file_name" --slave-file="$slave_file_name" --nodes-file="$redis_endpoints" --initial-master-file="$initial_master_nodes_file_name" --endpoint-type-file="$endpoint_type_file_name"
     MASTER=$(cat "/tmp/$master_file_name")
     REPLICAS=$(cat "/tmp/$slave_file_name")
     redis_nodes=$(cat "/tmp/$redis_nodes_file_name")
     initial_master_nodes=$(cat "/tmp/$initial_master_nodes_file_name")
+    endpoint_type=$(cat "/tmp/$endpoint_type_file_name")
     log "REDIS" "${redis_nodes}"
     log "REDIS" "Master : $MASTER , Slave : $REPLICAS"
 }
@@ -524,7 +526,7 @@ loadInitData() {
 startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec redis-server /data/default.conf --cluster-announce-ip "${POD_IP}" $args &
+    exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${POD_IP}" $args &
     redis_server_pid=$!
     waitForAllRedisServersToBeReady 5
 }
