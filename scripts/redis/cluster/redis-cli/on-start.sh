@@ -32,6 +32,36 @@ setUpRedisArgs() {
     redis_args="$auth_args $tls_args"
 }
 
+splitRedisAddress() {
+    node_info="$1"
+    IFS=' '
+    cur_address=POD_IP
+    cur_port="6379"
+    cur_busport="16379"
+    read -ra info <<< "$node_info"
+    cur_podname=${info[0]}
+    cur_address=${info[1]}
+    cur_port=${info[2]}
+    cur_busport=${info[3]}
+}
+
+getRedisAddress() {
+    pod_name="$1"
+    IFS=' '
+    for rd_node in $redis_nodes; do
+        splitRedisAddress rd_node
+        if [ "$cur_podname" -eq "$pod_name" ]; then
+            break
+        fi
+    done
+    if [ "$cur_podname" != "$pod_name" ]; then
+        unset cur_podname
+        unset cur_address
+        unset cur_port
+        unset cur_busport
+    fi
+}
+
 loadOldNodesConfIfExist() {
     unset old_nodes_conf
     if [ -e /data/nodes.conf ]; then
@@ -72,37 +102,37 @@ setupInitialThings() {
     readonly node_flag_master="master"
     readonly node_flag_slave="slave"
     readonly node_flag_myself="myself"
+    readonly default_endpoint_type="ip"
 
     loadOldNodesConfIfExist
     getDataFromRedisNodeFinder
+
+    getRedisAddress $HOSTNAME
+    readonly redis_node_info
+    readonly redis_address=$cur_address
+    readonly redis_database_port=$cur_port
+    readonly redis_busport=$cur_busport
+
     setUpRedisArgs
 }
 
-#----------------------------------------------------------------"Common functions" start --------------------------------------------------------------#
-# Given DNS name of the pod , the function finds IP:Port of the pod.
-# Here port is default redis port 6379
-getIPPortOfPod() {
-    host="$1"
-    unset cur_node_ip
-    cur_node_ip=$(getent hosts "$host" | awk '{ print $1 }')
-}
-
 checkIfRedisServerIsReady() {
-    host="$1"
+    node_info="$1"
+    splitRedisAddress node_info
     is_current_redis_server_running=false
 
-    RESP=$(redis-cli -h "$host" -p 6379 $redis_args ping 2>/dev/null)
+    RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args ping 2>/dev/null)
     if [ "$RESP" = "PONG" ]; then
         is_current_redis_server_running=true
     fi
 }
 # Updating nodes_conf var which contains cluster nodes. the argument is exec node, executing which we get cluster nodes
 update_nodes_conf() {
-    host="$1"
-    checkIfRedisServerIsReady "$host"
+    redis_info="$1"
+    checkIfRedisServerIsReady "$redis_info"
     unset nodes_conf
     if [ "$is_current_redis_server_running" = true ]; then
-        nodes_conf=$(redis-cli -h "$host" -p 6379 $redis_args cluster nodes)
+        nodes_conf=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args cluster nodes)
     fi
 }
 # Wait for current redis servers discovered by node-finder to be up and ready to accept connections and form cluster
@@ -110,12 +140,11 @@ update_nodes_conf() {
 waitForAllRedisServersToBeReady() (
     log "INFO" "Wait for $1s for each redis server to be ready"
     maxTimeout=$1
-    for domain_name in $redis_nodes; do
+    for rd_node in $redis_nodes; do
         endTime=$(($(date +%s) + maxTimeout))
         while [ "$(date +%s)" -lt $endTime ]; do
-            checkIfRedisServerIsReady "$domain_name"
+            checkIfRedisServerIsReady "$rd_node"
             if [ "$is_current_redis_server_running" = true ]; then
-                #log "INFO" "$domain_name is up"
                 break
             fi
             sleep 1
@@ -305,7 +334,6 @@ getSelfShardMasterIpPort() {
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_ip_port
     for domain_name in $redis_nodes; do
-
         if contains "$domain_name" "$cur_shard_name"; then
             isNodeInTheCluster "$domain_name"
             checkCurrentNodesStatus "$domain_name" "$node_flag_master"
@@ -366,25 +394,19 @@ joinClusterOrWait() {
 # we meet this node with new node.
 
 meetWithNode() {
-    domain_name="$1"
-    checkIfRedisServerIsReady "$domain_name"
+    rd_node="$1"
+    checkIfRedisServerIsReady "$rd_node"
     if [ $is_current_redis_server_running = false ]; then
-        log "MEET" "Server $domain_name is not running"
+        log "MEET" "Server $cur_address is not running"
         return
     fi
 
-    getIPPortOfPod "$domain_name"
-    # If cur_node_ip_port is set. We retrieved IP:Port of the pod successfully.
-    if [ -n "$cur_node_ip" ]; then
-        # If Current node ip does not exist in old nodes.conf , need to introduce them
-        update_nodes_conf "$POD_IP"
-        if ! contains "$old_nodes_conf" "$cur_node_ip" || ! contains "$nodes_conf" "$cur_node_ip"; then
-
-            RESP=$(redis-cli -c -h "$POD_IP" $redis_args cluster meet "$cur_node_ip" "$redis_database_port")
-            log "MEET" "Meet between $POD_IP and $cur_node_ip is $RESP"
-        fi
-    else
-        log "MEET" "Could not get ip:port of $domain_name"
+    # If Current node ip does not exist in old nodes.conf , need to introduce them
+    update_nodes_conf "$redis_node_info"
+    splitRedisAddress "$rd_node"
+    if ! contains "$old_nodes_conf" "$cur_node_ip" || ! contains "$nodes_conf" "$cur_node_ip"; then  # TODO
+        RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_node_ip" "$redis_database_port")
+        log "MEET" "Meet between $POD_IP and $cur_node_ip is $RESP"
     fi
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
@@ -394,9 +416,9 @@ meetWithNewNodes() {
     # Removing last two characters
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
-    for domain_name in $redis_nodes; do
-        if contains "$domain_name" "$cur_shard_name"; then
-            meetWithNode "$domain_name"
+    for rd_node in $redis_nodes; do
+        if [ "${rd_node#"$cur_shard_name"}" != "$rd_node" ]; then
+            meetWithNode "$rd_node"
         fi
     done
 
@@ -526,8 +548,14 @@ loadInitData() {
 startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
-    exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${POD_IP}" $args &
-    redis_server_pid=$!
+    # if preferred endpoint type is ip
+    if [ $endpoint_type -eq $default_endpoint_type ] then
+        exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+        redis_server_pid=$!
+    else
+        exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+        redis_server_pid=$!
+    fi
     waitForAllRedisServersToBeReady 5
 }
 # entry Point of script
