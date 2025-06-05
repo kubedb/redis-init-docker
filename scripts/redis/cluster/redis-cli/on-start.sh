@@ -49,7 +49,7 @@ getRedisAddress() {
     pod_name="$1"
     IFS=' '
     for rd_node in $redis_nodes; do
-        splitRedisAddress rd_node
+        splitRedisAddress "$rd_node"
         if [ "$cur_podname" -eq "$pod_name" ]; then
             break
         fi
@@ -108,7 +108,7 @@ setupInitialThings() {
     getDataFromRedisNodeFinder
 
     getRedisAddress $HOSTNAME
-    readonly redis_node_info
+    readonly redis_node_info=$rd_node
     readonly redis_address=$cur_address
     readonly redis_database_port=$cur_port
     readonly redis_busport=$cur_busport
@@ -132,6 +132,7 @@ update_nodes_conf() {
     checkIfRedisServerIsReady "$redis_info"
     unset nodes_conf
     if [ "$is_current_redis_server_running" = true ]; then
+        splitRedisAddress "$redis_info"
         nodes_conf=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args cluster nodes)
     fi
 }
@@ -404,9 +405,12 @@ meetWithNode() {
     # If Current node ip does not exist in old nodes.conf , need to introduce them
     update_nodes_conf "$redis_node_info"
     splitRedisAddress "$rd_node"
-    if ! contains "$old_nodes_conf" "$cur_node_ip" || ! contains "$nodes_conf" "$cur_node_ip"; then  # TODO
-        RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_node_ip" "$redis_database_port")
-        log "MEET" "Meet between $POD_IP and $cur_node_ip is $RESP"
+
+    cur_rd_contact="$cur_address:$cur_port@$cur_busport"
+
+    if ! contains "$old_nodes_conf" "$cur_rd_contact" || ! contains "$nodes_conf" "$cur_rd_contact"; then
+        RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_address" "$cur_port" "$cur_busport")
+        log "MEET" "Meet between $HOSTNAME and $cur_podname is $RESP"
     fi
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
@@ -422,26 +426,25 @@ meetWithNewNodes() {
         fi
     done
 
-    for domain_name in $redis_nodes; do
-        meetWithNode "$domain_name"
+    for rd_node in $redis_nodes; do
+        meetWithNode "$rd_node"
     done
 }
 
 # Check if current node is master or slave
 checkNodeRole() {
-    host="$1"
     unset node_role
 
-    node_info=$(redis-cli -h "$POD_IP" $redis_args info | grep role)
+    node_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep role)
     if [ -n "$node_info" ]; then
         node_role=$(echo "${node_info#"role:"}" | tr -cd '[:alnum:]._-')
     fi
 
     unset node_info
-    node_info=$(redis-cli -h "$POD_IP" $redis_args info | grep master_host)
+    node_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep master_host)
 
     if [ -n "$node_info" ]; then
-        self_master_ip=$(echo "${node_info#"master_host:"}" | tr -cd '[:alnum:]._-')
+        self_master_address=$(echo "${node_info#"master_host:"}" | tr -cd '[:alnum:]._-')
     fi
 }
 
@@ -480,16 +483,16 @@ getMasterNodeIDForCurrentSlave() {
 recoverClusterDuringPodRestart() {
     meetWithNewNodes
     while true; do
-        checkNodeRole "$POD_IP"
+        checkNodeRole
         if [ -n "$node_role" ]; then
             break
         fi
     done
 
     if [ "$node_role" = "${node_flag_slave}" ]; then
-        log "RECOVER" "Master IP is : $self_master_ip"
-        update_nodes_conf "$POD_IP"
-        if ! contains "$nodes_conf" "$self_master_ip"; then
+        log "RECOVER" "Master Address is : $self_master_address"
+        update_nodes_conf "$redis_node_info" #TODO
+        if ! contains "$nodes_conf" "$self_master_address"; then
             log "RECOVER" "Master IP does not match with nodes.conf. Replicating myself again with master"
             getMasterNodeIDForCurrentSlave
 
