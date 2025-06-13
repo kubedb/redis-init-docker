@@ -451,7 +451,7 @@ checkNodeRole() {
 # Only for slave nodes, this function retrieves master node id ( which is 40 chars long ) , from slave's nodes.conf (redis-cli cluster nodes)
 getMasterNodeIDForCurrentSlave() {
     unset current_slaves_master_id
-    update_nodes_conf "$POD_IP"
+    update_nodes_conf "$redis_node_info"
 
     temp_file=$(mktemp)
     printf '%s\n' "$nodes_conf" >"$temp_file"
@@ -491,7 +491,7 @@ recoverClusterDuringPodRestart() {
 
     if [ "$node_role" = "${node_flag_slave}" ]; then
         log "RECOVER" "Master Address is : $self_master_address"
-        update_nodes_conf "$redis_node_info" #TODO
+        update_nodes_conf "$redis_node_info"
         if ! contains "$nodes_conf" "$self_master_address"; then
             log "RECOVER" "Master IP does not match with nodes.conf. Replicating myself again with master"
             getMasterNodeIDForCurrentSlave
@@ -516,7 +516,7 @@ processRedisNode() {
         lastChar=$(echo -n "$HOSTNAME" | tail -c 1)
         if [ "$lastChar" = 0 ]; then
             echo "Master Node. "
-            createClusterOrWait
+            createClusterOrWait # todo
         else
             joinClusterOrWait
         fi
