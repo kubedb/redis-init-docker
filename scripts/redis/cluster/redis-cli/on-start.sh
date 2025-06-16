@@ -224,8 +224,8 @@ isNodeInTheCluster() {
 # anything about cluster. If no node knows then cluster does not exist
 checkIfRedisClusterExist() {
     unset does_redis_cluster_exist
-    for domain_name in $redis_nodes; do
-        isNodeInTheCluster "$domain_name"
+    for rd_info in $redis_nodes; do
+        isNodeInTheCluster "$rd_info"
 
         if [ -n "$is_current_node_in_cluster" ]; then
             if [ "$is_current_node_in_cluster" = true ]; then
@@ -233,9 +233,8 @@ checkIfRedisClusterExist() {
                 does_redis_cluster_exist=true
                 break
             else
-                # shellcheck disable=SC2039
-                self_dns_name="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
-                if [ "$self_dns_name" != "$domain_name" ]; then
+                self_address="$redis_address:$redis_database_port@$redis_busport"
+                if [ "$self_address" != "$rd_info" ]; then
                     does_redis_cluster_exist=false
                 fi
             fi
@@ -249,20 +248,20 @@ checkIfRedisClusterExist() {
 
 # A pod from each shard will be master.
 # So We take ONE pod which is not slave from each shard and store it's IP:PORT in the master_nodes_ip_port array
-# Initially all the 0th pod will be master, so we can iterate over them in redis_nodes array by (REPLICA+1)*i indexes whrere i = 0,1,2,..
-findIPOfInitialMasterPods() {
+# Initially all the 0th pod will be master, so we can iterate over them in redis_nodes array by (REPLICA+1)*i indexes where i = 0,1,2,..
+findIpPortOfInitialMasterPods() {
     master_nodes_ip_port=""
     master_nodes_count=0
-    for domain_name in $initial_master_nodes; do
-        checkIfRedisServerIsReady "$domain_name"
+    for rd_master_info in $initial_master_nodes; do
+        checkIfRedisServerIsReady "$rd_master_info"
         if [ $is_current_redis_server_running = false ]; then
             continue
         fi
 
-        getIPPortOfPod "$domain_name"
+        splitRedisAddress $rd_master_info
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
-        if [ -n "$cur_node_ip" ]; then
-            cur_node_ip_port="$cur_node_ip:$redis_database_port"
+        if [ -n "$cur_address" ]; then
+            cur_node_ip_port="$cur_address:$cur_port"
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
             #log "Master" "Adding master $cur_node_ip_port"
@@ -277,7 +276,7 @@ findIPOfInitialMasterPods() {
 createClusterOrWait() {
     log "CLUSTER" "Master Node. Create Cluster or Wait"
     while true; do
-        findIPOfInitialMasterPods
+        findIpPortOfInitialMasterPods
         if [ "$master_nodes_count" -eq "$MASTER" ]; then
 
             checkIfRedisClusterExist
@@ -306,20 +305,19 @@ createClusterOrWait() {
 
 # findMasterNodeIds() finds redis node IDs of using IP
 getNodeIDUsingIP() {
-    nodes_ip_port="$1"
-    #nodes_ip=${nodes_ip_port::-5}
-    # Removing last six characters
-    nodes_ip=$(echo "$nodes_ip_port" | rev | cut -c 6- | rev)
+    rd_info=$shard_master_rd_address
 
     unset current_node_id
-    update_nodes_conf "$nodes_ip"
+    update_nodes_conf "$rd_info"
 
     temp_file=$(mktemp)
     printf '%s\n' "$nodes_conf" >"$temp_file"
 
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
-            if contains "$line" "$nodes_ip_port"; then
+            splitRedisAddress $rd_info
+            ip_port="$cur_address:$cur_port@$cur_busport"
+            if contains "$line" "$ip_port"; then
                 current_node_id="${line%% *}"
             fi
         done <"$temp_file"
@@ -333,18 +331,17 @@ getSelfShardMasterIpPort() {
     # Removing last two characters
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
-    unset shard_master_ip_port
-    for domain_name in $redis_nodes; do
-        if contains "$domain_name" "$cur_shard_name"; then
-            isNodeInTheCluster "$domain_name"
-            checkCurrentNodesStatus "$domain_name" "$node_flag_master"
+    unset shard_master_rd_address
+    for rd_info in $redis_nodes; do
+        if contains "$rd_info" "$cur_shard_name"; then
+            isNodeInTheCluster "$rd_info"
+            checkCurrentNodesStatus "$rd_info" "$node_flag_master"
             # To be shard master, current node should be in the cluster and it should be in master node
             if [ -n "$is_current_node_in_cluster" ] && [ $is_current_node_in_cluster = true ] && [ -n "$current_nodes_checked_status" ] && [ $current_nodes_checked_status = true ]; then
-                getIPPortOfPod "$domain_name"
+                splitRedisAddress $rd_info
                 # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
-                if [ -n "$cur_node_ip" ]; then
-                    cur_node_ip_port="$cur_node_ip:$redis_database_port"
-                    shard_master_ip_port=$cur_node_ip_port
+                if [ -n "$cur_address" ]; then
+                    shard_master_rd_address=$rd_info
                     break
                 fi
             fi
@@ -355,12 +352,14 @@ getSelfShardMasterIpPort() {
 # Called for slave nodes only
 joinCurrentNodeAsSlave() {
     getSelfShardMasterIpPort
-    if [ -n "$shard_master_ip_port" ]; then
-        log "SHARD" "Current shard master ip:port -> $shard_master_ip_port"
-        getNodeIDUsingIP "$shard_master_ip_port"
+    if [ -n "$shard_master_rd_address" ]; then
+        log "SHARD" "Current shard master ip:port@busport -> $shard_master_rd_address"
+        getNodeIDUsingIP "$shard_master_rd_address"
         if [ -n "$current_node_id" ]; then
-            replica_ip_port="$POD_IP:$redis_database_port"
+            replica_ip_port="$redis_address:$redis_database_port"
 
+            splitRedisAddress $shard_master_rd_address
+            shard_master_ip_port="$cur_address:$cur_port"
             RESP=$(redis-cli $redis_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
             sleep 5
             log "ADD NODE" "$RESP"
@@ -372,7 +371,7 @@ joinCurrentNodeAsSlave() {
 joinClusterOrWait() {
     while true; do
         # Check if myself is in the cluster
-        isNodeInTheCluster "$POD_IP"
+        isNodeInTheCluster "$redis_node_info"
 
         if [ -n "$is_current_node_in_cluster" ] && [ $is_current_node_in_cluster = true ]; then
             echo "Current node is inside the cluster. Returning"
@@ -437,14 +436,16 @@ checkNodeRole() {
 
     node_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep role)
     if [ -n "$node_info" ]; then
-        node_role=$(echo "${node_info#"role:"}" | tr -cd '[:alnum:]._-')
+        node_role=$(echo "${node_info#"role:"}")
     fi
 
     unset node_info
     node_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep master_host)
 
     if [ -n "$node_info" ]; then
-        self_master_address=$(echo "${node_info#"master_host:"}" | tr -cd '[:alnum:]._-')
+        self_master_ip=$(echo "${node_info#"master_host:"}")
+        self_master_port=$(echo "${node_info#"master_port:"}")
+        self_master_address="$self_master_ip:$self_master_port"
     fi
 }
 
@@ -493,7 +494,7 @@ recoverClusterDuringPodRestart() {
         log "RECOVER" "Master Address is : $self_master_address"
         update_nodes_conf "$redis_node_info"
         if ! contains "$nodes_conf" "$self_master_address"; then
-            log "RECOVER" "Master IP does not match with nodes.conf. Replicating myself again with master"
+            log "RECOVER" "Master IP or Port does not match with nodes.conf. Replicating myself again with master"
             getMasterNodeIDForCurrentSlave
 
             RESP=$(redis-cli -c $redis_args cluster replicate "$current_slaves_master_id")
@@ -516,7 +517,7 @@ processRedisNode() {
         lastChar=$(echo -n "$HOSTNAME" | tail -c 1)
         if [ "$lastChar" = 0 ]; then
             echo "Master Node. "
-            createClusterOrWait # todo
+            createClusterOrWait
         else
             joinClusterOrWait
         fi
