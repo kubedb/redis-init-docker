@@ -34,23 +34,32 @@ setUpRedisArgs() {
 
 splitRedisAddress() {
     node_info="$1"
+    echo "node_info:$node_info"
     IFS=' '
-    cur_address=POD_IP
+    cur_address=$POD_IP
     cur_port="6379"
     cur_busport="16379"
-    read -ra info <<< "$node_info"
-    cur_podname=${info[0]}
-    cur_address=${info[1]}
-    cur_port=${info[2]}
-    cur_busport=${info[3]}
+#    read -ra info <<< "$node_info"
+#    cur_podname=${info[0]}
+#    cur_address=${info[1]}
+#    cur_port=${info[2]}
+#    cur_busport=${info[3]}
+
+    set -- $node_info
+
+    cur_podname=$1
+    cur_address=$2
+    cur_port=$3
+    cur_busport=$4
+    echo "===========cur_podname:$cur_podname;cur_add:$cur_address;"
 }
 
 getRedisAddress() {
     pod_name="$1"
-    IFS=' '
+    IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
         splitRedisAddress "$rd_node"
-        if [ "$cur_podname" -eq "$pod_name" ]; then
+        if [ "$cur_podname" = "$pod_name" ]; then
             break
         fi
     done
@@ -112,6 +121,7 @@ setupInitialThings() {
     readonly redis_address=$cur_address
     readonly redis_database_port=$cur_port
     readonly redis_busport=$cur_busport
+    echo "node:$redis_node_info;redis_address:$redis_address;redis_port:$redis_database_port;redis_busport:$redis_busport;"
 
     setUpRedisArgs
 }
@@ -553,7 +563,9 @@ startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
     # if preferred endpoint type is ip
-    if [ $endpoint_type -eq $default_endpoint_type ] then
+    echo "========address:$redis_address"
+    if [ $endpoint_type -eq $default_endpoint_type ]
+    then
         exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
         redis_server_pid=$!
     else
