@@ -33,25 +33,17 @@ setUpRedisArgs() {
 }
 
 splitRedisAddress() {
-    node_info="$1"
-    echo "node_info:$node_info"
+    node_identity=$1
     IFS=' '
     cur_address=$POD_IP
     cur_port="6379"
     cur_busport="16379"
-#    read -ra info <<< "$node_info"
-#    cur_podname=${info[0]}
-#    cur_address=${info[1]}
-#    cur_port=${info[2]}
-#    cur_busport=${info[3]}
 
-    set -- $node_info
-
+    set -- $node_identity
     cur_podname=$1
     cur_address=$2
     cur_port=$3
     cur_busport=$4
-    echo "===========cur_podname:$cur_podname;cur_add:$cur_address;"
 }
 
 getRedisAddress() {
@@ -121,14 +113,13 @@ setupInitialThings() {
     readonly redis_address=$cur_address
     readonly redis_database_port=$cur_port
     readonly redis_busport=$cur_busport
-    echo "node:$redis_node_info;redis_address:$redis_address;redis_port:$redis_database_port;redis_busport:$redis_busport;"
 
     setUpRedisArgs
 }
 
 checkIfRedisServerIsReady() {
     node_info="$1"
-    splitRedisAddress node_info
+    splitRedisAddress "$node_info"
     is_current_redis_server_running=false
 
     RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args ping 2>/dev/null)
@@ -151,6 +142,7 @@ update_nodes_conf() {
 waitForAllRedisServersToBeReady() (
     log "INFO" "Wait for $1s for each redis server to be ready"
     maxTimeout=$1
+    IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
         endTime=$(($(date +%s) + maxTimeout))
         while [ "$(date +%s)" -lt $endTime ]; do
@@ -234,6 +226,7 @@ isNodeInTheCluster() {
 # anything about cluster. If no node knows then cluster does not exist
 checkIfRedisClusterExist() {
     unset does_redis_cluster_exist
+    IFS=$(echo "\n\b")
     for rd_info in $redis_nodes; do
         isNodeInTheCluster "$rd_info"
 
@@ -262,19 +255,20 @@ checkIfRedisClusterExist() {
 findIpPortOfInitialMasterPods() {
     master_nodes_ip_port=""
     master_nodes_count=0
+
+    IFS=$(echo "\n\b")
     for rd_master_info in $initial_master_nodes; do
         checkIfRedisServerIsReady "$rd_master_info"
         if [ $is_current_redis_server_running = false ]; then
             continue
         fi
 
-        splitRedisAddress $rd_master_info
+        splitRedisAddress "$rd_master_info"
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
         if [ -n "$cur_address" ]; then
             cur_node_ip_port="$cur_address:$cur_port"
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
-            #log "Master" "Adding master $cur_node_ip_port"
         fi
     done
 }
@@ -325,7 +319,7 @@ getNodeIDUsingIP() {
 
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
-            splitRedisAddress $rd_info
+            splitRedisAddress "$rd_info"
             ip_port="$cur_address:$cur_port@$cur_busport"
             if contains "$line" "$ip_port"; then
                 current_node_id="${line%% *}"
@@ -342,13 +336,14 @@ getSelfShardMasterIpPort() {
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_rd_address
+    IFS=$(echo "\n\b")
     for rd_info in $redis_nodes; do
         if contains "$rd_info" "$cur_shard_name"; then
             isNodeInTheCluster "$rd_info"
             checkCurrentNodesStatus "$rd_info" "$node_flag_master"
             # To be shard master, current node should be in the cluster and it should be in master node
             if [ -n "$is_current_node_in_cluster" ] && [ $is_current_node_in_cluster = true ] && [ -n "$current_nodes_checked_status" ] && [ $current_nodes_checked_status = true ]; then
-                splitRedisAddress $rd_info
+                splitRedisAddress "$rd_info"
                 # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
                 if [ -n "$cur_address" ]; then
                     shard_master_rd_address=$rd_info
@@ -367,8 +362,7 @@ joinCurrentNodeAsSlave() {
         getNodeIDUsingIP "$shard_master_rd_address"
         if [ -n "$current_node_id" ]; then
             replica_ip_port="$redis_address:$redis_database_port"
-
-            splitRedisAddress $shard_master_rd_address
+            splitRedisAddress "$shard_master_rd_address"
             shard_master_ip_port="$cur_address:$cur_port"
             RESP=$(redis-cli $redis_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
             sleep 5
@@ -429,12 +423,14 @@ meetWithNewNodes() {
     # Removing last two characters
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
+    IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
         if [ "${rd_node#"$cur_shard_name"}" != "$rd_node" ]; then
             meetWithNode "$rd_node"
         fi
     done
 
+    IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
         meetWithNode "$rd_node"
     done
@@ -563,7 +559,6 @@ startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
     # if preferred endpoint type is ip
-    echo "========address:$redis_address"
     if [ $endpoint_type -eq $default_endpoint_type ]
     then
         exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
