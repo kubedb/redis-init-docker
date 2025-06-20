@@ -1,6 +1,6 @@
 SHELL=/bin/bash -o pipefail
 
-REGISTRY   ?= hiranmoy28
+REGISTRY   ?= 0.1.acdc.appscode.ninja/library
 BIN        ?= redis-init2
 IMAGE      := $(REGISTRY)/$(BIN)
 TAG        ?= $(shell git describe --exact-match --abbrev=0 2>/dev/null || echo "")
