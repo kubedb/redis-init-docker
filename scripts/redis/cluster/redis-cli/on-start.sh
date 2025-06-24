@@ -44,6 +44,12 @@ splitRedisAddress() {
     cur_address=$2
     cur_port=$3
     cur_busport=$4
+    if [ "$endpoint_type" = "$default_endpoint_type" ]
+    then
+        cur_ip="$2"
+    else
+        cur_ip="$5"
+    fi
 }
 
 getRedisAddress() {
@@ -60,6 +66,7 @@ getRedisAddress() {
         unset cur_address
         unset cur_port
         unset cur_busport
+        unset cur_ip
     fi
 }
 
@@ -319,13 +326,13 @@ getNodeIDUsingIP() {
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
             splitRedisAddress "$rd_info"
-            if [ "$endpoint_type" = "$default_endpoint_type" ]
-            then
-                ip_port="$cur_address:$cur_port@$cur_busport"
-            else
-                ip_port="@$cur_busport,$cur_address"
-            fi
-            if contains "$line" "$ip_port"; then
+#            if [ "$endpoint_type" = "$default_endpoint_type" ]
+#            then
+#                ip_port="$cur_address:$cur_port@$cur_busport"
+#            else
+#                ip_port="@$cur_busport,$cur_address"
+#            fi
+            if contains "$line" "$cur_ip" && contains "$line" "$cur_port"; then
                 current_node_id="${line%% *}"
             fi
         done <"$temp_file"
@@ -413,10 +420,15 @@ meetWithNode() {
     update_nodes_conf "$redis_node_info"
     splitRedisAddress "$rd_node"
 
-    cur_rd_contact="$cur_address:$cur_port@$cur_busport"
+#    if [ "$endpoint_type" = "$default_endpoint_type" ]
+#    then
+#        cur_rd_contact="$cur_address:$cur_port@$cur_busport"
+#    else
+#        cur_rd_contact="@$cur_busport,$cur_address"
+#    fi
 
-    if ! contains "$old_nodes_conf" "$cur_rd_contact" || ! contains "$nodes_conf" "$cur_rd_contact"; then
-        RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_address" "$cur_port" "$cur_busport")
+    if ! contains "$old_nodes_conf" "$cur_ip" || ! contains "$old_nodes_conf" "$cur_port" || ! contains "$nodes_conf" "$cur_ip" || ! contains "$nodes_conf" "$cur_port"; then
+        RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_ip" "6379" "16379")
         log "MEET" "Meet between $HOSTNAME and $cur_podname is $RESP"
     fi
 }
@@ -563,13 +575,8 @@ startRedisServerInBackground() {
     log "REDIS" "Started Redis Server In Background"
     cp /usr/local/etc/redis/default.conf /data/default.conf
 
-    if [ "${TLS:-0}" = "ON" ]; then
-        arg_on_tls="--cluster-announce-port ${redis_database_port}"
-    else
-        arg_on_tls="--cluster-announce-tls-port ${redis_database_port}"
-    fi
     # if preferred endpoint type is ip
-    if [ "$endpoint_type" -eq "$default_endpoint_type" ]
+    if [ "$endpoint_type" = "$default_endpoint_type" ]
     then
         if [ "${TLS:-0}" = "ON" ]; then
             exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
@@ -587,7 +594,7 @@ startRedisServerInBackground() {
             redis_server_pid=$!
         fi
     fi
-    waitForAllRedisServersToBeReady 5
+    waitForAllRedisServersToBeReady 120
 }
 # entry Point of script
 runRedis() {

@@ -45,7 +45,7 @@ WORKDIR /go/src/github.com/kubedb/redis-node-finder
 
 RUN git clone https://github.com/kubedb/redis-node-finder.git \
     && cd redis-node-finder \
-    && git checkout test-11 \
+    && git checkout test-13 \
 #    && git fetch --all \
 #    && git reset origin/announce-test \
     && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -v -o redis-node-finder .
