@@ -326,12 +326,6 @@ getNodeIDUsingIP() {
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
             splitRedisAddress "$rd_info"
-#            if [ "$endpoint_type" = "$default_endpoint_type" ]
-#            then
-#                ip_port="$cur_address:$cur_port@$cur_busport"
-#            else
-#                ip_port="@$cur_busport,$cur_address"
-#            fi
             if contains "$line" "$cur_ip" && contains "$line" "$cur_port"; then
                 current_node_id="${line%% *}"
             fi
@@ -342,8 +336,6 @@ getNodeIDUsingIP() {
 
 # For slaves nodes only, get master id of the shard.
 getSelfShardMasterIpPort() {
-    # cur_shard_name=${HOSTNAME::-2}
-    # Removing last two characters
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_rd_address
@@ -419,13 +411,6 @@ meetWithNode() {
     # If Current node ip does not exist in old nodes.conf , need to introduce them
     update_nodes_conf "$redis_node_info"
     splitRedisAddress "$rd_node"
-
-#    if [ "$endpoint_type" = "$default_endpoint_type" ]
-#    then
-#        cur_rd_contact="$cur_address:$cur_port@$cur_busport"
-#    else
-#        cur_rd_contact="@$cur_busport,$cur_address"
-#    fi
 
     if ! contains "$old_nodes_conf" "$cur_ip" || ! contains "$old_nodes_conf" "$cur_port" || ! contains "$nodes_conf" "$cur_ip" || ! contains "$nodes_conf" "$cur_port"; then
         RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_ip" "6379" "16379")
