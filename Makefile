@@ -1,7 +1,7 @@
 SHELL=/bin/bash -o pipefail
 
-REGISTRY   ?= 0.1.acdc.appscode.ninja/library
-BIN        ?= redis-init2
+REGISTRY   ?= ghcr.io/kubedb
+BIN        ?= redis-init
 IMAGE      := $(REGISTRY)/$(BIN)
 TAG        ?= $(shell git describe --exact-match --abbrev=0 2>/dev/null || echo "")
 
