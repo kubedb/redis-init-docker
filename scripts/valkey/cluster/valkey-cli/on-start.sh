@@ -55,12 +55,13 @@ splitValkeyAddress() {
 getValkeyAddress() {
     pod_name="$1"
     IFS=$(echo "\n\b")
-    for vk_node in $valkey_nodes; do
+    while read -r vk_node; do
         splitValkeyAddress "$vk_node"
         if [ "$cur_podname" = "$pod_name" ]; then
             break
         fi
-    done
+    done < "/tmp/$valkey_endpoints"
+
     if [ "$cur_podname" != "$pod_name" ]; then
         unset cur_podname
         unset cur_address
@@ -119,7 +120,7 @@ setupInitialThings() {
     readonly valkey_node_info=$vk_node
     readonly valkey_address=$cur_address
     readonly valkey_database_port=$cur_port
-    readonly valkey_busport=$cur_buspor
+    readonly valkey_busport=$cur_busport
 
     setUpValkeyArgs
 }
@@ -151,7 +152,7 @@ waitForAllValkeyServersToBeReady() (
     maxTimeout=$1
 
     IFS=$(echo "\n\b")
-    for vk_node in $valkey_nodes; do
+    while read -r vk_node; do
         endTime=$(($(date +%s) + maxTimeout))
         while [ "$(date +%s)" -lt $endTime ]; do
             checkIfValkeyServerIsReady "$vk_node"
@@ -160,7 +161,7 @@ waitForAllValkeyServersToBeReady() (
             fi
             sleep 1
         done
-    done
+    done < "/tmp/$valkey_endpoints"
 )
 # contains(string, substring)
 #
@@ -235,7 +236,7 @@ isNodeInTheCluster() {
 checkIfValkeyClusterExist() {
     unset does_valkey_cluster_exist
     IFS=$(echo "\n\b")
-    for vk_info in $valkey_nodes; do
+    while read -r vk_info; do
         isNodeInTheCluster "$vk_info"
 
         if [ -n "$is_current_node_in_cluster" ]; then
@@ -250,7 +251,7 @@ checkIfValkeyClusterExist() {
                 fi
             fi
         fi
-    done
+    done < "/tmp/$valkey_endpoints"
 }
 
 #----------------------------------------------------------------"Common functions" end --------------------------------------------------------------#
@@ -265,11 +266,12 @@ findIpPortOfInitialMasterPods() {
     master_nodes_count=0
 
     IFS=$(echo "\n\b")
-    for vk_master_info in $initial_master_nodes; do
+    while read -r vk_master_info; do
         checkIfValkeyServerIsReady "$vk_master_info"
         if [ $is_current_valkey_server_running = false ]; then
             continue
         fi
+
 
         splitValkeyAddress "$vk_master_info"
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
@@ -278,7 +280,7 @@ findIpPortOfInitialMasterPods() {
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
         fi
-    done
+    done < "/tmp/$initial_master_nodes_file_name"
 }
 #
 # This function  is called initially for 0th nodes
@@ -341,7 +343,7 @@ getSelfShardMasterIpPort() {
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_vk_address
     IFS=$(echo "\n\b")
-    for vk_info in $valkey_nodes; do
+    while read -r vk_info; do
         if contains "$vk_info" "$cur_shard_name"; then
             isNodeInTheCluster "$vk_info"
             checkCurrentNodesStatus "$vk_info" "$node_flag_master"
@@ -355,7 +357,7 @@ getSelfShardMasterIpPort() {
                 fi
             fi
         fi
-    done
+    done < "/tmp/$valkey_endpoints"
 }
 
 # Called for slave nodes only
@@ -426,16 +428,16 @@ meetWithNewNodes() {
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     IFS=$(echo "\n\b")
-    for vk_node in $valkey_nodes; do
+    while read -r vk_node; do
         if [ "${vk_node#"$cur_shard_name"}" != "$vk_node" ]; then
             meetWithNode "$vk_node"
         fi
-    done
+    done < "/tmp/$valkey_endpoints"
 
     IFS=$(echo "\n\b")
-    for vk_node in $valkey_nodes; do
+    while read -r vk_node; do
         meetWithNode "$vk_node"
-    done
+    done < "/tmp/$valkey_endpoints"
 }
 
 # Check if current node is master or slave
@@ -559,7 +561,6 @@ loadInitData() {
 startValkeyServerInBackground() {
     log "VALKEY" "Started Valkey Server In Background"
     cp /usr/local/etc/valkey/default.conf /data/default.conf
-
 
     # if preferred endpoint type is ip
     if [ "$endpoint_type" = "$default_endpoint_type" ]
