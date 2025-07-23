@@ -326,7 +326,7 @@ getNodeIDUsingIP() {
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
             splitRedisAddress "$rd_info"
-            if contains "$line" "$cur_ip" && contains "$line" "$cur_port"; then
+            if contains "$line" "$cur_address" && contains "$line" "$cur_port"; then
                 current_node_id="${line%% *}"
             fi
         done <"$temp_file"
