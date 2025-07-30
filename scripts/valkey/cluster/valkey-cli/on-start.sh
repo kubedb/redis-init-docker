@@ -329,7 +329,7 @@ getNodeIDUsingIP() {
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
             splitValkeyAddress "$vk_info"
-            if contains "$line" "$cur_ip" && contains "$line" "$cur_port"; then
+            if contains "$line" "$cur_address" && contains "$line" "$cur_port"; then
                 current_node_id="${line%% *}"
             fi
         done <"$temp_file"
@@ -573,11 +573,12 @@ startValkeyServerInBackground() {
             valkey_server_pid=$!
         fi
     else
+        cur_node_ip=$(getent hosts "$redis_address" | awk '{ print $1 }')
         if [ "${TLS:-0}" = "ON" ]; then
-            exec valkey-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${valkey_address}" --cluster-announce-tls-port "${valkey_database_port}" --cluster-announce-bus-port "${valkey_busport}" $args &
+            exec valkey-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${valkey_address}" --cluster-announce-tls-port "${valkey_database_port}" --cluster-announce-bus-port "${valkey_busport}" --cluster-announce-ip "$cur_node_ip" $args &
             valkey_server_pid=$!
         else
-            exec valkey-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${valkey_address}" --cluster-announce-port "${valkey_database_port}" --cluster-announce-bus-port "${valkey_busport}" $args &
+            exec valkey-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${valkey_address}" --cluster-announce-port "${valkey_database_port}" --cluster-announce-bus-port "${valkey_busport}" --cluster-announce-ip "$cur_node_ip" $args &
             valkey_server_pid=$!
         fi
     fi
