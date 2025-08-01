@@ -326,7 +326,7 @@ getNodeIDUsingIP() {
     if [ -e "$temp_file" ]; then
         while IFS= read -r line; do
             splitRedisAddress "$rd_info"
-            if contains "$line" "$cur_ip" && contains "$line" "$cur_port"; then
+            if contains "$line" "$cur_address" && contains "$line" "$cur_port"; then
                 current_node_id="${line%% *}"
             fi
         done <"$temp_file"
@@ -571,11 +571,12 @@ startRedisServerInBackground() {
             redis_server_pid=$!
         fi
     else
+        cur_node_ip=$(getent hosts "$redis_address" | awk '{ print $1 }')
         if [ "${TLS:-0}" = "ON" ]; then
-            exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+            exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" --cluster-announce-ip "$cur_node_ip" $args &
             redis_server_pid=$!
         else
-            exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+            exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" --cluster-announce-ip "$cur_node_ip" $args &
             redis_server_pid=$!
         fi
     fi
