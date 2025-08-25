@@ -535,8 +535,21 @@ loadInitData() {
     if [ -d "/init" ]; then
         init_script_ran=$(cat "/tmp/ran-init.txt")
 
+        if [ -z "$init_script_ran" ]; then
+            echo "true" >"/tmp/ran-init.txt"
+        fi
+
+        is_master=false
+
+        last_char=$(echo -n "$HOSTNAME" | tail -c 1)
+        if [ -n "$old_nodes_conf" ] && [ "$node_role" = "${node_flag_master}" ]; then
+            is_master=true
+        elif [ -z "$old_nodes_conf" ] && [ "$last_char" = 0 ]; then
+            is_master=true
+        fi
+
         checkNodeRole
-        if [ "$node_role" = "${node_flag_master}" ] && [ -n "$init_script_ran" ]; then
+        if [ "$is_master" = true ] && [ -z "$init_script_ran" ]; then
             log "INIT" "Init Directory Exists"
             waitForAllRedisServersToBeReady 120
             cd /init || true
