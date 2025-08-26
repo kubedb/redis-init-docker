@@ -533,23 +533,22 @@ processRedisNode() {
 
 loadInitData() {
     if [ -d "/init" ]; then
-        init_script_ran=$(cat "/tmp/ran-init.txt")
-
-        if [ -z "$init_script_ran" ]; then
-            echo "true" >"/tmp/ran-init.txt"
+        pod_restarted=false
+        if [ -n "$old_nodes_conf" ]; then
+            pod_restarted=true
         fi
 
         is_master=false
 
         last_char=$(echo -n "$HOSTNAME" | tail -c 1)
+        checkNodeRole
         if [ -n "$old_nodes_conf" ] && [ "$node_role" = "${node_flag_master}" ]; then
             is_master=true
         elif [ -z "$old_nodes_conf" ] && [ "$last_char" = 0 ]; then
             is_master=true
         fi
 
-        checkNodeRole
-        if [ "$is_master" = true ] && [ -z "$init_script_ran" ]; then
+        if [ "$is_master" = true ] && [ "$pod_restarted" = false ]; then
             log "INIT" "Init Directory Exists"
             waitForAllRedisServersToBeReady 120
             cd /init || true

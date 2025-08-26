@@ -62,8 +62,10 @@ waitForAllRedisServersToBeReady() (
 )
 
 loadInitData() {
-    if [ -d "/init" ]; then
+    init_script_ran=$(cat "/data/ran-init.txt")
+    if [ -d "/init" ] && [ -z "$init_script_ran" ]; then
         log "INIT" "Init Directory Exists"
+        echo "true" >"/data/ran-init.txt"
         waitForAllRedisServersToBeReady 120
         cd /init || true
         for file in /init/*
