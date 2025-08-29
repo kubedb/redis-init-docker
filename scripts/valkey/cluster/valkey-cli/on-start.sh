@@ -535,22 +535,39 @@ processValkeyNode() {
 
 loadInitData() {
     if [ -d "/init" ]; then
-        log "INIT" "Init Directory Exists"
-        waitForAllValkeyServersToBeReady 120
-        cd /init || true
-        for file in /init/*
-        do
-           case "$file" in
-                   *.sh)
-                       log "INIT" "Running user provided initialization shell script $file"
-                       sh "$file"
-                       ;;
-                   *.lua)
-                       log "INIT" "Running user provided initialization lua script $file"
-                       valkey-cli -c $valkey_args --eval "$file"
-                       ;;
-               esac
-        done
+        pod_restarted=false
+        if [ -n "$old_nodes_conf" ]; then
+            pod_restarted=true
+        fi
+
+        is_master=false
+
+        last_char=$(echo -n "$HOSTNAME" | tail -c 1)
+        checkNodeRole
+        if [ -n "$old_nodes_conf" ] && [ "$node_role" = "${node_flag_master}" ]; then
+            is_master=true
+        elif [ -z "$old_nodes_conf" ] && [ "$last_char" = 0 ]; then
+            is_master=true
+        fi
+
+        if [ "$is_master" = true ] && [ "$pod_restarted" = false ]; then
+            log "INIT" "Init Directory Exists"
+            waitForAllValkeyServersToBeReady 120
+            cd /init || true
+            for file in /init/*
+            do
+                case "$file" in
+                        *.sh)
+                            log "INIT" "Running user provided initialization shell script $file"
+                            sh "$file"
+                            ;;
+                        *.lua)
+                            log "INIT" "Running user provided initialization lua script $file"
+                            valkey-cli -c $valkey_args --eval "$file"
+                            ;;
+                    esac
+            done
+        fi
     fi
 }
 
