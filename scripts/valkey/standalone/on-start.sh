@@ -12,9 +12,23 @@ log() (
 #Checks if auth password and tls certificate files exist on the node
 #if yes, add them on the argument string
 setUpValkeyArgs() {
-    if [ "${VALKEYCLI_AUTH:-0}" != 0 ]; then
-        log "ARGS" "Setting up Auth arguments"
+    if printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://'; then
+        secret_path=$(printf '%s\n' "$VALKEYCLI_AUTH" | sed 's#^vs://##')
+        if [ ! -f "$secret_path" ]; then
+            log "ARGS" "Auth path '$secret_path' does not exist"
+            exit 1
+        fi
+        # Trim trailing newline to avoid valkey-cli auth issues
+        secret_value=$(tr -d '\r\n' < "$secret_path")
+        if [ -z "$secret_value" ]; then
+            log "ARGS" "Auth file '$secret_path' is empty"
+            exit 1
+        fi
+        auth_args="-a ${secret_value} --no-auth-warning"
+        log "ARGS" "Loaded auth from '$secret_path'"
+    else
         auth_args="-a ${VALKEYCLI_AUTH} --no-auth-warning"
+        log "ARGS" "Using inline auth"
     fi
 
     if [ "${TLS:-0}" = "ON" ]; then
@@ -103,4 +117,8 @@ runValkey(){
 }
 
 args=$*
+if printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://'; then
+  args="${args#* }"
+  args="${args#* }"
+fi
 runValkey
