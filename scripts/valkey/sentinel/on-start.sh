@@ -29,9 +29,25 @@ function setUpSentinelArgs() {
     sentinel_args=("${sentinel_auth_args[@]} ${sentinel_tls_args[@]}")
 }
 function setUpValkeyArgs() {
-    if [[ "${VALKEYCLI_AUTH:-0}" != 0 ]]; then
-        log "Valkey_Args" "Setting up Valkey auth args"
-        valkey_auth_args=("${valkey_auth_args[@]} -a ${VALKEYCLI_AUTH} --no-auth-warning")
+    if [ "${VALKEYCLI_AUTH:-0}" != 0 ]; then
+        if printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://'; then
+            secret_path=$(printf '%s\n' "$VALKEYCLI_AUTH" | sed 's#^vs://##')
+            if [ ! -f "$secret_path" ]; then
+                log "ARGS" "Auth path '$secret_path' does not exist"
+                exit 1
+            fi
+            # Trim trailing newline to avoid valkey-cli auth issues
+            secret_value=$(tr -d '\r\n' < "$secret_path")
+            if [ -z "$secret_value" ]; then
+                log "ARGS" "Auth file '$secret_path' is empty"
+                exit 1
+            fi
+            valkey_auth_args=("${valkey_auth_args[@]} -a ${secret_value} --no-auth-warning")
+            log "ARGS" "Loaded auth from '$secret_path'"
+        else
+            valkey_auth_args=("${valkey_auth_args[@]} -a ${VALKEYCLI_AUTH} --no-auth-warning")
+            log "ARGS" "Using inline auth"
+        fi
     fi
     if [[ "${TLS:-0}" == "ON" ]]; then
         log "Valkey_Args" "Setting Up Valkey TLS Args"
@@ -296,6 +312,9 @@ sleep 5
 isReadyAllSentinel
 getMasterHost
 args=$@
+if printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://'; then
+  args=("${args[@]:2}")
+fi
 if [[ "${#VALKEY_SENTINEL_INFO[@]}" == "0" ]]; then
     log "INFO" "Initializing Valkey server for the first time..."
     self="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"

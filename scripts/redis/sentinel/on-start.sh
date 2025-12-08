@@ -29,10 +29,27 @@ function setUpSentinelArgs() {
     sentinel_args=("${sentinel_auth_args[@]} ${sentinel_tls_args[@]}")
 }
 function setUpRedisArgs() {
-    if [[ "${REDISCLI_AUTH:-0}" != 0 ]]; then
-        log "Redis_Args" "Setting up Redis auth args"
-        redis_auth_args=("${redis_auth_args[@]} -a ${REDISCLI_AUTH} --no-auth-warning")
+    if [ "${REDISCLI_AUTH:-0}" != 0 ]; then
+        if printf '%s' "$REDISCLI_AUTH" | grep -q '^vs://'; then
+            secret_path=$(printf '%s\n' "$REDISCLI_AUTH" | sed 's#^vs://##')
+            if [ ! -f "$secret_path" ]; then
+                log "ARGS" "Auth path '$secret_path' does not exist"
+                exit 1
+            fi
+            # Trim trailing newline to avoid redis-cli auth issues
+            secret_value=$(tr -d '\r\n' < "$secret_path")
+            if [ -z "$secret_value" ]; then
+                log "ARGS" "Auth file '$secret_path' is empty"
+                exit 1
+            fi
+            redis_auth_args=("${redis_auth_args[@]} -a ${secret_value} --no-auth-warning")
+            log "ARGS" "Loaded auth from '$secret_path'"
+        else
+            redis_auth_args=("${redis_auth_args[@]} -a ${REDISCLI_AUTH} --no-auth-warning")
+            log "ARGS" "Using inline auth"
+        fi
     fi
+
     if [[ "${TLS:-0}" == "ON" ]]; then
         log "Redis_Args" "Setting Up Redis TLS Args"
         ca_crt=/certs/ca.crt
@@ -296,6 +313,9 @@ sleep 5
 isReadyAllSentinel
 getMasterHost
 args=$@
+if printf '%s' "$REDISCLI_AUTH" | grep -q '^vs://'; then
+  args=("${args[@]:2}")
+fi
 if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
     log "INFO" "Initializing Redis server for the first time..."
     self="$HOSTNAME.$DATABASE_GOVERNING_SERVICE"
