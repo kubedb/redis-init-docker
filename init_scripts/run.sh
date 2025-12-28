@@ -10,7 +10,6 @@ if [ "$DISTRIBUTION" = "Valkey" ]; then
         cp /tmp/scripts/valkey/standalone/* /scripts
     fi
 
-
 elif [ "$DISTRIBUTION" = "Official" ]; then
     if [ "$REDIS_MODE" = "Cluster" ]; then
         if [ "$MAJOR_REDIS_VERSION" = "4" ]; then
@@ -28,4 +27,3 @@ elif [ "$DISTRIBUTION" = "Official" ]; then
         cp /tmp/scripts/redis/standalone/* /scripts
     fi
 fi
-

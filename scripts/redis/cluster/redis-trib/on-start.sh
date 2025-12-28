@@ -495,7 +495,7 @@ runRedis() {
 }
 args=$*
 if printf '%s' "$REDISCLI_AUTH" | grep -q '^vs://'; then
-  args="${args#* }"
-  args="${args#* }"
+    args="${args#* }"
+    args="${args#* }"
 fi
 runRedis

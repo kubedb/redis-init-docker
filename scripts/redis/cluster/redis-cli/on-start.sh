@@ -19,7 +19,7 @@ setUpRedisArgs() {
                 exit 1
             fi
             # Trim trailing newline to avoid redis-cli auth issues
-            secret_value=$(tr -d '\r\n' < "$secret_path")
+            secret_value=$(tr -d '\r\n' <"$secret_path")
             if [ -z "$secret_value" ]; then
                 log "ARGS" "Auth file '$secret_path' is empty"
                 exit 1
@@ -60,8 +60,7 @@ splitRedisAddress() {
     cur_address=$2
     cur_port=$3
     cur_busport=$4
-    if [ "$endpoint_type" = "$default_endpoint_type" ]
-    then
+    if [ "$endpoint_type" = "$default_endpoint_type" ]; then
         cur_ip="$2"
     else
         cur_ip="$5"
@@ -568,18 +567,17 @@ loadInitData() {
             log "INIT" "Init Directory Exists"
             waitForAllRedisServersToBeReady 120
             cd /init || true
-            for file in /init/*
-            do
+            for file in /init/*; do
                 case "$file" in
-                        *.sh)
-                            log "INIT" "Running user provided initialization shell script $file"
-                            sh "$file"
-                            ;;
-                        *.lua)
-                            log "INIT" "Running user provided initialization lua script $file"
-                            redis-cli -c $redis_args --eval "$file"
-                            ;;
-                    esac
+                    *.sh)
+                        log "INIT" "Running user provided initialization shell script $file"
+                        sh "$file"
+                        ;;
+                    *.lua)
+                        log "INIT" "Running user provided initialization lua script $file"
+                        redis-cli -c $redis_args --eval "$file"
+                        ;;
+                esac
             done
         fi
     fi
@@ -594,8 +592,7 @@ startRedisServerInBackground() {
     cp /usr/local/etc/redis/default.conf /data/default.conf
 
     # if preferred endpoint type is ip
-    if [ "$endpoint_type" = "$default_endpoint_type" ]
-    then
+    if [ "$endpoint_type" = "$default_endpoint_type" ]; then
         if [ "${TLS:-0}" = "ON" ]; then
             exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
             redis_server_pid=$!
@@ -628,7 +625,7 @@ runRedis() {
 }
 args=$*
 if printf '%s' "$REDISCLI_AUTH" | grep -q '^vs://'; then
-  args="${args#* }"
-  args="${args#* }"
+    args="${args#* }"
+    args="${args#* }"
 fi
 runRedis

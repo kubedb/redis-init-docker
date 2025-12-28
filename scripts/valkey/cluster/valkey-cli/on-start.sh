@@ -19,7 +19,7 @@ setUpValkeyArgs() {
                 exit 1
             fi
             # Trim trailing newline to avoid VALKEY-cli auth issues
-            secret_value=$(tr -d '\r\n' < "$secret_path")
+            secret_value=$(tr -d '\r\n' <"$secret_path")
             if [ -z "$secret_value" ]; then
                 log "ARGS" "Auth file '$secret_path' is empty"
                 exit 1
@@ -60,8 +60,7 @@ splitValkeyAddress() {
     cur_address=$2
     cur_port=$3
     cur_busport=$4
-    if [ "$endpoint_type" = "$default_endpoint_type" ]
-    then
+    if [ "$endpoint_type" = "$default_endpoint_type" ]; then
         cur_ip="$2"
     else
         cur_ip="$5"
@@ -76,7 +75,7 @@ getValkeyAddress() {
         if [ "$cur_podname" = "$pod_name" ]; then
             break
         fi
-    done < "/tmp/$valkey_endpoints"
+    done <"/tmp/$valkey_endpoints"
 
     if [ "$cur_podname" != "$pod_name" ]; then
         unset cur_podname
@@ -177,7 +176,7 @@ waitForAllValkeyServersToBeReady() (
             fi
             sleep 1
         done
-    done < "/tmp/$valkey_endpoints"
+    done <"/tmp/$valkey_endpoints"
 )
 # contains(string, substring)
 #
@@ -267,7 +266,7 @@ checkIfValkeyClusterExist() {
                 fi
             fi
         fi
-    done < "/tmp/$valkey_endpoints"
+    done <"/tmp/$valkey_endpoints"
 }
 
 #----------------------------------------------------------------"Common functions" end --------------------------------------------------------------#
@@ -288,7 +287,6 @@ findIpPortOfInitialMasterPods() {
             continue
         fi
 
-
         splitValkeyAddress "$vk_master_info"
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
         if [ -n "$cur_address" ]; then
@@ -296,7 +294,7 @@ findIpPortOfInitialMasterPods() {
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
         fi
-    done < "/tmp/$initial_master_nodes_file_name"
+    done <"/tmp/$initial_master_nodes_file_name"
 }
 #
 # This function  is called initially for 0th nodes
@@ -373,7 +371,7 @@ getSelfShardMasterIpPort() {
                 fi
             fi
         fi
-    done < "/tmp/$valkey_endpoints"
+    done <"/tmp/$valkey_endpoints"
 }
 
 # Called for slave nodes only
@@ -448,12 +446,12 @@ meetWithNewNodes() {
         if [ "${vk_node#"$cur_shard_name"}" != "$vk_node" ]; then
             meetWithNode "$vk_node"
         fi
-    done < "/tmp/$valkey_endpoints"
+    done <"/tmp/$valkey_endpoints"
 
     IFS=$(echo "\n\b")
     while read -r vk_node; do
         meetWithNode "$vk_node"
-    done < "/tmp/$valkey_endpoints"
+    done <"/tmp/$valkey_endpoints"
 }
 
 # Check if current node is master or slave
@@ -570,18 +568,17 @@ loadInitData() {
             log "INIT" "Init Directory Exists"
             waitForAllValkeyServersToBeReady 120
             cd /init || true
-            for file in /init/*
-            do
+            for file in /init/*; do
                 case "$file" in
-                        *.sh)
-                            log "INIT" "Running user provided initialization shell script $file"
-                            sh "$file"
-                            ;;
-                        *.lua)
-                            log "INIT" "Running user provided initialization lua script $file"
-                            valkey-cli -c $valkey_args --eval "$file"
-                            ;;
-                    esac
+                    *.sh)
+                        log "INIT" "Running user provided initialization shell script $file"
+                        sh "$file"
+                        ;;
+                    *.lua)
+                        log "INIT" "Running user provided initialization lua script $file"
+                        valkey-cli -c $valkey_args --eval "$file"
+                        ;;
+                esac
             done
         fi
     fi
@@ -596,8 +593,7 @@ startValkeyServerInBackground() {
     cp /usr/local/etc/valkey/default.conf /data/default.conf
 
     # if preferred endpoint type is ip
-    if [ "$endpoint_type" = "$default_endpoint_type" ]
-    then
+    if [ "$endpoint_type" = "$default_endpoint_type" ]; then
         if [ "${TLS:-0}" = "ON" ]; then
             exec valkey-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${valkey_address}" --cluster-announce-tls-port "${valkey_database_port}" --cluster-announce-bus-port "${valkey_busport}" $args &
             valkey_server_pid=$!
@@ -630,7 +626,7 @@ runValkey() {
 }
 args=$*
 if printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://'; then
-  args="${args#* }"
-  args="${args#* }"
+    args="${args#* }"
+    args="${args#* }"
 fi
 runValkey

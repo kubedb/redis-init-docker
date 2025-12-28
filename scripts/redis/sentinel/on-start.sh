@@ -37,7 +37,7 @@ function setUpRedisArgs() {
                 exit 1
             fi
             # Trim trailing newline to avoid redis-cli auth issues
-            secret_value=$(tr -d '\r\n' < "$secret_path")
+            secret_value=$(tr -d '\r\n' <"$secret_path")
             if [ -z "$secret_value" ]; then
                 log "ARGS" "Auth file '$secret_path' is empty"
                 exit 1
@@ -283,18 +283,17 @@ loadInitData() {
         if [[ "${#REDIS_SENTINEL_INFO[@]}" = "0" ]]; then
             log "INIT" "Init Directory Exists"
             cd /init || true
-            for file in /init/*
-            do
+            for file in /init/*; do
                 case "$file" in
-                        *.sh)
-                            log "INIT" "Running user provided initialization shell script $file"
-                            sh "$file"
-                            ;;
-                        *.lua)
-                            log "INIT" "Running user provided initialization lua script $file"
-                            redis-cli ${redis_args[@]} --eval "$file"
-                            ;;
-                    esac
+                    *.sh)
+                        log "INIT" "Running user provided initialization shell script $file"
+                        sh "$file"
+                        ;;
+                    *.lua)
+                        log "INIT" "Running user provided initialization lua script $file"
+                        redis-cli ${redis_args[@]} --eval "$file"
+                        ;;
+                esac
             done
         fi
 
@@ -314,7 +313,7 @@ isReadyAllSentinel
 getMasterHost
 args=$@
 if printf '%s' "$REDISCLI_AUTH" | grep -q '^vs://'; then
-  args=("${args[@]:2}")
+    args=("${args[@]:2}")
 fi
 if [[ "${#REDIS_SENTINEL_INFO[@]}" == "0" ]]; then
     log "INFO" "Initializing Redis server for the first time..."

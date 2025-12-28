@@ -50,7 +50,7 @@ function updatePassword() {
     sed -i 's/^requirepass .*/requirepass "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
     sed -i 's/^masterauth .*/masterauth "'"$REDISCLI_AUTH"'"/' /data/sentinel.conf
 }
-function deleteExistingHashPass(){
+function deleteExistingHashPass() {
     sed -i "/^$sentinel_sanitize_config #.*$/d" /data/sentinel.conf
 }
 
