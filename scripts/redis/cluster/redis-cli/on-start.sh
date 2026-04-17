@@ -459,7 +459,7 @@ checkNodeRole() {
 
     node_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep role)
     if [ -n "$node_info" ]; then
-        node_role=$(echo "${node_info#"role:"}")
+        node_role=$(echo "${node_info#"role:"}" | tr -d '\r')
     fi
 
     unset node_info
@@ -469,8 +469,8 @@ checkNodeRole() {
     node_port_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep master_port)
 
     if [ -n "$node_info" ]; then
-        self_master_ip=$(echo "${node_info#"master_host:"}")
-        self_master_port=$(echo "${node_port_info#"master_port:"}")
+        self_master_ip=$(echo "${node_info#"master_host:"}" | tr -d '\r')
+        self_master_port=$(echo "${node_port_info#"master_port:"}" | tr -d '\r')
         self_master_address="$self_master_ip:$self_master_port"
     fi
 }
