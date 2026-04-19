@@ -148,7 +148,14 @@ checkIfRedisServerIsReady() {
     RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args ping 2>/dev/null)
     if [ "$RESP" = "PONG" ]; then
         is_current_redis_server_running=true
+        return
     fi
+    RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $auth_args ping 2>/dev/null)
+    if [ "$RESP" = "PONG" ]; then
+        is_current_redis_server_running=true
+        return
+    fi
+
 }
 # Updating nodes_conf var which contains cluster nodes. the argument is exec node, executing which we get cluster nodes
 update_nodes_conf() {
@@ -164,8 +171,10 @@ update_nodes_conf() {
 # We will try to ping each node for maxTimeout time and then try next one
 waitForAllRedisServersToBeReady() (
     log "INFO" "Wait for $1s for each redis server to be ready"
+    getDataFromRedisNodeFinder
     maxTimeout=$1
     IFS=$(echo "\n\b")
+    is_all_redis_server_running=true
     for rd_node in $redis_nodes; do
         endTime=$(($(date +%s) + maxTimeout))
         while [ "$(date +%s)" -lt $endTime ]; do
@@ -175,6 +184,10 @@ waitForAllRedisServersToBeReady() (
             fi
             sleep 1
         done
+        if [ "$is_all_redis_server_running" = true ] && [ "$is_current_redis_server_running" = false ]; then
+            is_all_redis_server_running=false
+            return
+        fi
     done
 )
 # contains(string, substring)
@@ -435,11 +448,24 @@ meetWithNode() {
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
 meetWithNewNodes() {
-    waitForAllRedisServersToBeReady 120
-    # cur_shard_name=${HOSTNAME::-2}
-    # Removing last two characters
+    echo "===========hello meetwithnewnodes"
+    node_count=$(printf '%s' "$redis_nodes" | grep -c '' || true)
+    i=0
+    while [ "$i" -lt "$node_count" ]; do
+        waitForAllRedisServersToBeReady 120
+        i=$((i + 1))
+        if [ "$is_all_redis_server_running" = true ]; then
+            break
+        fi
+    done
+    echo "============after wait meetwithnewnodes"
+    if [ "$is_all_redis_server_running" = false ]; then
+        return
+    fi
+
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
+    getDataFromRedisNodeFinder
     IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
         if [ "${rd_node#"$cur_shard_name"}" != "$rd_node" ]; then
@@ -447,8 +473,20 @@ meetWithNewNodes() {
         fi
     done
 
+    RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args cluster nodes)
+    echo "====********* cluster nodes: $RESP"
+    sleep 10
+
     IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
+#        echo "========rd-node $rd_node"
+#        splitRedisAddress "$rd_node"
+#        RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args info | grep master_host)
+#        echo "====********* master host: $RESP"
+#        RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args info)
+#        echo "====********* info: $RESP"
+#        RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args cluster nodes)
+#        echo "====********* cluster nodes: $RESP"
         meetWithNode "$rd_node"
     done
 }
@@ -468,7 +506,11 @@ checkNodeRole() {
     unset node_port_info
     node_port_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep master_port)
 
-    if [ -n "$node_info" ]; then
+    echo "=======redis args: $redis_args"
+    echo "=== node info: $node_info"
+    echo "===== node port info: $node_port_info"
+
+    if [ -n "$node_info" ] && [ -n "$node_port_info" ] && ! contains "$node_port_info" "master_port:0"; then
         self_master_ip=$(echo "${node_info#"master_host:"}" | tr -d '\r')
         self_master_port=$(echo "${node_port_info#"master_port:"}" | tr -d '\r')
         self_master_address="$self_master_ip:$self_master_port"
@@ -478,29 +520,76 @@ checkNodeRole() {
 # Only for slave nodes, this function retrieves master node id ( which is 40 chars long ) , from slave's nodes.conf (redis-cli cluster nodes)
 getMasterNodeIDForCurrentSlave() {
     unset current_slaves_master_id
-    update_nodes_conf "$redis_node_info"
+    my_shard=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
 
-    temp_file=$(mktemp)
-    printf '%s\n' "$nodes_conf" >"$temp_file"
+    IFS=$(echo "\n\b")
+    for rd_node in $redis_nodes; do
+        splitRedisAddress "$rd_node"
+        this_shard=$(echo "$cur_podname" | rev | cut -c 3- | rev)
 
-    if [ -e "$temp_file" ]; then
-        while IFS= read -r line; do
-            # Check if current node is slave and get it's master ID
-            if contains "$line" "$node_flag_myself" && contains "$line" "$node_flag_slave"; then
-                current_slaves_master_id="$(echo "$line" | cut -d' ' -f4)"
+        if [ "$this_shard" = "$my_shard" ]; then
+            update_nodes_conf "$redis_node_info"
+            splitRedisAddress "$rd_node"
+            temp_file=$(mktemp)
+            printf '%s\n' "$nodes_conf" >"$temp_file"
+            if [ -e "$temp_file" ]; then
+                while IFS= read -r line; do
+                    # Check if current node is slave and get it's master ID
+                    if contains "$line" "$node_flag_master" && \
+                       ( contains "$line" "$cur_address:$cur_port" || \
+                         ( contains "$line" "$cur_address" && contains "$line" "tls-port=$cur_port" ) || \
+                         contains "$line" "$cur_ip:6379" || \
+                         ( contains "$line" "$cur_ip" && contains "$line" "tls-port=6379" ) ); then
 
-                if [ "$(echo -n "$current_slaves_master_id" | wc -m)" -eq 40 ]; then
-                    log "RECOVER" "My Master ID is : $current_slaves_master_id"
-                else
-                    log "PANIC" "MASTER ID : $current_slaves_master_id. Wrong Info"
-                fi
+                        current_slaves_master_id="${line%% *}"
+                        if [ "$(echo -n "$current_slaves_master_id" | wc -m)" -eq 40 ]; then
+                            log "RECOVER" "My Master ID is : $current_slaves_master_id"
+                        else
+                            log "PANIC" "MASTER ID : $current_slaves_master_id. Wrong Info"
+                        fi
+                    fi
+                done <"$temp_file"
             fi
-        done <"$temp_file"
-    fi
-    rm "$temp_file"
+            rm "$temp_file"
+        fi
+    done
     if [ -z "$current_slaves_master_id" ]; then
         log "PANIC" "COULD NOT GET MY MASTER ID "
     fi
+}
+
+# Fix tls-port=0 issue immediately on restart using old nodes.conf.
+# When restarting with TLS enabled, Redis reads tls-port=0 from old nodes.conf
+# and tries to connect to master on port 0. Fix it right away by replicating
+# using the master ID from old nodes.conf — no cluster connectivity needed.
+fixPortZeroFromOldNodesConf() {
+    my_master_id=$(echo "$old_nodes_conf" | grep "myself,slave" | awk '{print $4}')
+    if [ -z "$my_master_id" ] || [ "$(echo -n "$my_master_id" | wc -m)" -ne 40 ]; then
+        log "RECOVER" "Not a slave or could not get master ID from old nodes.conf. Skipping early replicate."
+        return
+    fi
+
+    # The master of our shard is always the *-0 pod.
+    # Meet it first so the cluster node table learns the master's TLS port
+    # before we run cluster replicate (otherwise Redis resolves tls-port=0 and
+    # connects to port 0 even after a successful CLUSTER REPLICATE).
+    my_shard=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
+    master_pod="${my_shard}-0"
+    getRedisAddress "$master_pod"
+    echo "===========before master meet $(cat /data/nodes.conf)"
+    if [ -n "$cur_address" ]; then
+        log "RECOVER" "Meeting master $master_pod ($cur_address:$cur_port) to update cluster node table"
+        redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args \
+            cluster meet "$cur_address" "$cur_port" "$cur_busport" 2>/dev/null
+        sleep 2
+    fi
+
+
+    echo "===========after master meet $(cat /data/nodes.conf)"
+
+    log "RECOVER" "Fixing port-0: running cluster replicate with master ID $my_master_id"
+    RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster replicate "$my_master_id")
+    log "RECOVER" "Early cluster replicate status: $RESP"
 }
 
 # For slave nodes, sometimes after running cluster meet, redis node's nodes.conf is updated but
@@ -508,6 +597,7 @@ getMasterNodeIDForCurrentSlave() {
 # about it's master. If master_host does not match with nodes.conf, we cluster replicate
 # this node with master node's id .
 recoverClusterDuringPodRestart() {
+    fixPortZeroFromOldNodesConf
     meetWithNewNodes
     while true; do
         checkNodeRole
@@ -515,16 +605,23 @@ recoverClusterDuringPodRestart() {
             break
         fi
     done
+    echo "======node role ${node_role}"
 
     if [ "$node_role" = "${node_flag_slave}" ]; then
         log "RECOVER" "Master Address is : $self_master_address"
         update_nodes_conf "$redis_node_info"
         if ! contains "$nodes_conf" "$self_master_address"; then
             log "RECOVER" "Master IP or Port does not match with nodes.conf. Replicating myself again with master"
-            getMasterNodeIDForCurrentSlave
-
-            RESP=$(redis-cli -c $redis_args cluster replicate "$current_slaves_master_id")
-            log "RECOVER" "Cluster Replicated with master . Status : $RESP"
+            while true; do
+                getMasterNodeIDForCurrentSlave
+                if [ -n "$current_slaves_master_id" ] && [ "$(echo -n "$current_slaves_master_id" | wc -m)" -eq 40 ]; then
+                    RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster replicate "$current_slaves_master_id")
+                    log "RECOVER" "Cluster Replicated with master . Status : $RESP"
+                    break
+                fi
+                log "RECOVER" "Master ID not ready yet, retrying in 2s..."
+                sleep 2
+            done
         fi
     else
         log "MASTER" "role is $node_role. Do Nothing. Exit "
@@ -616,7 +713,25 @@ startRedisServerInBackground() {
             redis_server_pid=$!
         fi
     fi
-    waitForAllRedisServersToBeReady 120
+
+    # On restart (old_nodes_conf exists), only wait for self to be ready.
+    # recoverClusterDuringPodRestart has its own waitForAllRedisServersToBeReady.
+    # Waiting for ALL nodes here causes 120s-per-node timeouts during rolling TLS
+    # migration (peers still non-TLS can't be TLS-pinged), delaying recovery by minutes.
+    if [ -n "$old_nodes_conf" ]; then
+        log "REDIS" "Restart detected: waiting for self only before recovery"
+        endTime=$(($(date +%s) + 30))
+        while [ "$(date +%s)" -lt "$endTime" ]; do
+            RESP=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args ping 2>/dev/null)
+            if [ "$RESP" = "PONG" ]; then
+                log "REDIS" "Self is ready"
+                break
+            fi
+            sleep 1
+        done
+    else
+        waitForAllRedisServersToBeReady 120
+    fi
 }
 # entry Point of script
 runRedis() {
