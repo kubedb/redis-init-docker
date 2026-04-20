@@ -169,8 +169,8 @@ update_nodes_conf() {
 }
 # Wait for current redis servers discovered by node-finder to be up and ready to accept connections and form cluster
 # We will try to ping each node for maxTimeout time and then try next one
-waitForAllRedisServersToBeReady() {
-    log "INFO" "Wait for $1s for each redis server to be ready"
+areAllRedisServersReady() {
+    log "INFO" "Check $1s for each redis server to be ready"
     getDataFromRedisNodeFinder
     maxTimeout=$1
     IFS=$(echo "\n\b")
@@ -448,10 +448,10 @@ meetWithNode() {
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
 meetWithNewNodes() {
-    node_count=$(( $(printf '%s' "$redis_nodes" | grep -c '' || true) * 15 ))
+    node_count=$(( $(printf '%s' "$redis_nodes" | grep -c '' || true) * 60 ))
     i=0
     while [ "$i" -lt "$node_count" ]; do
-        waitForAllRedisServersToBeReady 20
+        areAllRedisServersReady 10
         i=$((i + 1))
         if [ "$is_all_redis_server_running" = true ]; then
             break
@@ -667,7 +667,20 @@ loadInitData() {
 
         if [ "$is_master" = true ] && [ "$pod_restarted" = false ]; then
             log "INIT" "Init Directory Exists"
-            waitForAllRedisServersToBeReady 120
+
+            node_count=$(( $(printf '%s' "$redis_nodes" | grep -c '' || true) * 100 ))
+            i=0
+            while [ "$i" -lt "$node_count" ]; do
+                areAllRedisServersReady 20
+                i=$((i + 1))
+                if [ "$is_all_redis_server_running" = true ]; then
+                    break
+                fi
+            done
+            if [ "$is_all_redis_server_running" = false ]; then
+                return
+            fi
+
             cd /init || true
             for file in /init/*
             do
@@ -716,7 +729,7 @@ startRedisServerInBackground() {
     fi
 
     # On restart (old_nodes_conf exists), only wait for self to be ready.
-    # recoverClusterDuringPodRestart has its own waitForAllRedisServersToBeReady.
+    # recoverClusterDuringPodRestart has its own areAllRedisServersReady.
     # Waiting for ALL nodes here causes 120s-per-node timeouts during rolling TLS
     # migration (peers still non-TLS can't be TLS-pinged), delaying recovery by minutes.
     if [ -n "$old_nodes_conf" ]; then
@@ -731,7 +744,7 @@ startRedisServerInBackground() {
             sleep 1
         done
     else
-        waitForAllRedisServersToBeReady 120
+        areAllRedisServersReady 600
     fi
 }
 # entry Point of script
