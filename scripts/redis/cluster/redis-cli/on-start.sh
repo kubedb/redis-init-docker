@@ -448,7 +448,6 @@ meetWithNode() {
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
 meetWithNewNodes() {
-    echo "===========hello meetwithnewnodes"
     node_count=$(printf '%s' "$redis_nodes" | grep -c '' || true)
     i=0
     while [ "$i" -lt "$node_count" ]; do
@@ -458,7 +457,6 @@ meetWithNewNodes() {
             break
         fi
     done
-    echo "============after wait meetwithnewnodes"
     if [ "$is_all_redis_server_running" = false ]; then
         return
     fi
@@ -473,20 +471,8 @@ meetWithNewNodes() {
         fi
     done
 
-    RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args cluster nodes)
-    echo "====********* cluster nodes: $RESP"
-    sleep 10
-
     IFS=$(echo "\n\b")
     for rd_node in $redis_nodes; do
-#        echo "========rd-node $rd_node"
-#        splitRedisAddress "$rd_node"
-#        RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args info | grep master_host)
-#        echo "====********* master host: $RESP"
-#        RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args info)
-#        echo "====********* info: $RESP"
-#        RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args cluster nodes)
-#        echo "====********* cluster nodes: $RESP"
         meetWithNode "$rd_node"
     done
 }
@@ -506,15 +492,34 @@ checkNodeRole() {
     unset node_port_info
     node_port_info=$(redis-cli -h "$redis_address" -p "$redis_database_port" $redis_args info | grep master_port)
 
-    echo "=======redis args: $redis_args"
-    echo "=== node info: $node_info"
-    echo "===== node port info: $node_port_info"
-
     if [ -n "$node_info" ] && [ -n "$node_port_info" ] && ! contains "$node_port_info" "master_port:0"; then
         self_master_ip=$(echo "${node_info#"master_host:"}" | tr -d '\r')
         self_master_port=$(echo "${node_port_info#"master_port:"}" | tr -d '\r')
         self_master_address="$self_master_ip:$self_master_port"
     fi
+}
+
+update_is_master_from_different_shard() {
+    master_address="$1"
+    getDataFromRedisNodeFinder
+    is_master_from_different_shard=true
+    shard_master_hostname="${master_address%:*}"
+    shard_master_port=$(echo "$master_address" | rev | cut -d: -f1 | rev)
+
+    my_shard=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
+
+    IFS=$(echo "\n\b")
+    for rd_node in $redis_nodes; do
+        splitRedisAddress "$rd_node"
+        if { [ "$cur_address" = "$shard_master_hostname" ] && [ "$cur_port" = "$shard_master_port" ]; } || \
+            { [ "$cur_ip" = "$shard_master_hostname" ] && [ "6379" = "$shard_master_port" ]; }; then
+            this_shard=$(echo "$cur_podname" | rev | cut -c 3- | rev)
+            if [ "$this_shard" = "$my_shard" ]; then
+                log "SHARD" "My master is from same shard. No need to recover cluster state by replicating with master again"
+                is_master_from_different_shard=false
+            fi
+        fi
+    done
 }
 
 # Only for slave nodes, this function retrieves master node id ( which is 40 chars long ) , from slave's nodes.conf (redis-cli cluster nodes)
@@ -576,16 +581,12 @@ fixPortZeroFromOldNodesConf() {
     my_shard=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     master_pod="${my_shard}-0"
     getRedisAddress "$master_pod"
-    echo "===========before master meet $(cat /data/nodes.conf)"
     if [ -n "$cur_address" ]; then
         log "RECOVER" "Meeting master $master_pod ($cur_address:$cur_port) to update cluster node table"
         redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args \
             cluster meet "$cur_address" "$cur_port" "$cur_busport" 2>/dev/null
         sleep 2
     fi
-
-
-    echo "===========after master meet $(cat /data/nodes.conf)"
 
     log "RECOVER" "Fixing port-0: running cluster replicate with master ID $my_master_id"
     RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster replicate "$my_master_id")
@@ -605,12 +606,12 @@ recoverClusterDuringPodRestart() {
             break
         fi
     done
-    echo "======node role ${node_role}"
 
     if [ "$node_role" = "${node_flag_slave}" ]; then
         log "RECOVER" "Master Address is : $self_master_address"
         update_nodes_conf "$redis_node_info"
-        if ! contains "$nodes_conf" "$self_master_address"; then
+        update_is_master_from_different_shard "$self_master_address"
+        if ! contains "$nodes_conf" "$self_master_address" || [ "$is_master_from_different_shard" = true ]; then
             log "RECOVER" "Master IP or Port does not match with nodes.conf. Replicating myself again with master"
             while true; do
                 getMasterNodeIDForCurrentSlave
