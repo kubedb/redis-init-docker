@@ -146,6 +146,7 @@ checkIfRedisServerIsReady() {
     is_current_redis_server_running=false
 
     RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args ping 2>/dev/null)
+    echo "==================node info: $node_info , ping response : $RESP=================="
     if [ "$RESP" = "PONG" ]; then
         is_current_redis_server_running=true
         return
@@ -169,7 +170,7 @@ update_nodes_conf() {
 }
 # Wait for current redis servers discovered by node-finder to be up and ready to accept connections and form cluster
 # We will try to ping each node for maxTimeout time and then try next one
-waitForAllRedisServersToBeReady() (
+waitForAllRedisServersToBeReady() {
     log "INFO" "Wait for $1s for each redis server to be ready"
     getDataFromRedisNodeFinder
     maxTimeout=$1
@@ -189,7 +190,7 @@ waitForAllRedisServersToBeReady() (
             return
         fi
     done
-)
+}
 # contains(string, substring)
 #
 # Returns 0 if the specified string contains the specified substring,
@@ -448,10 +449,10 @@ meetWithNode() {
 }
 # First try to meet with nodes within same shard . Then try to meet with all the nodes
 meetWithNewNodes() {
-    node_count=$(printf '%s' "$redis_nodes" | grep -c '' || true)
+    node_count=$(( $(printf '%s' "$redis_nodes" | grep -c '' || true) * 15 ))
     i=0
     while [ "$i" -lt "$node_count" ]; do
-        waitForAllRedisServersToBeReady 120
+        waitForAllRedisServersToBeReady 20
         i=$((i + 1))
         if [ "$is_all_redis_server_running" = true ]; then
             break
