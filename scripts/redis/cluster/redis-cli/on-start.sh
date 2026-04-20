@@ -146,7 +146,6 @@ checkIfRedisServerIsReady() {
     is_current_redis_server_running=false
 
     RESP=$(redis-cli -h "$cur_address" -p "$cur_port" $redis_args ping 2>/dev/null)
-    echo "==================node info: $node_info , ping response : $RESP=================="
     if [ "$RESP" = "PONG" ]; then
         is_current_redis_server_running=true
         return
