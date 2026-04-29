@@ -628,9 +628,26 @@ runValkey() {
     log "VALKEY" "Bringing back valkey server in foreground. Adios"
     wait $valkey_server_pid
 }
-args=$*
-if printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://'; then
-  args="${args#* }"
-  args="${args#* }"
+# Replace naive args stripping with robust filtering to remove vs:// secret token and its -a / --no-auth-warning pair.
+args="$@"
+if [ -n "${VALKEYCLI_AUTH:-}" ] && printf '%s' "$VALKEYCLI_AUTH" | grep -q '^vs://' ; then
+    new_args=""
+    # iterate over positional parameters safely
+    set -- "$@"
+    while [ $# -gt 0 ]; do
+        token="$1"
+        shift
+
+        # If token is '-a', check whether next token is the vs:// secret (or any vs://), skip both if so.
+        if [ "$token" = "-a" ]; then
+            next="$1"
+            if [ -n "$next" ] && ( [ "$next" = "$VALKEYCLI_AUTH" ] || printf '%s' "$next" | grep -q '^vs://' ); then
+                shift
+                # remove optional '--no-auth-warning' that may follow
+                if [ "$1" = "--no-auth-warning" ]; then
+                    shift
+                fi
+                continue
+            else
 fi
 runValkey
