@@ -711,11 +711,24 @@ startRedisServerInBackground() {
     if [ "$endpoint_type" = "$default_endpoint_type" ]
     then
         if [ "${TLS:-0}" = "ON" ]; then
-            exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
-            redis_server_pid=$!
+            # numeric comparison; default to 0 when MAJOR_REDIS_VERSION is unset
+            if [ "${MAJOR_REDIS_VERSION:-0}" -lt 7 ]; then
+                exec redis-server /data/default.conf --cluster-announce-ip "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+                redis_server_pid=$!
+            else
+                # behavior for Redis >= 7
+                exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+                redis_server_pid=$!
+            fi
         else
-            exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
-            redis_server_pid=$!
+             if [ "${MAJOR_REDIS_VERSION:-0}" -lt 7 ]; then
+                exec redis-server /data/default.conf --cluster-announce-ip "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+                redis_server_pid=$!
+             else
+                # behavior for Redis >= 7
+                exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-ip "${redis_address}" --cluster-announce-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" $args &
+                redis_server_pid=$!
+              fi
         fi
     else
         cur_node_ip=$(getent hosts "$redis_address" | awk '{ print $1 }')
@@ -749,7 +762,7 @@ startRedisServerInBackground() {
 }
 # entry Point of script
 runRedis() {
-    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version is 5 or 6 or 7. Using redis-cli commands"
+    log "REDIS" "Hello. Start of Posix Shell Script. Redis Version is 5+. Using redis-cli commands"
     setupInitialThings
     startRedisServerInBackground
     processRedisNode
