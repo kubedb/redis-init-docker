@@ -68,9 +68,18 @@ splitRedisAddress() {
     fi
 }
 
+setLineSeparator() {
+    sh_target=$(ls -la /bin/sh 2>/dev/null)
+    if contains "$sh_target" "bash"; then
+        IFS=$'\n'
+    elif contains "$sh_target" "dash"; then
+        IFS=$(echo "\n\b")
+    fi
+}
+
 getRedisAddress() {
     pod_name="$1"
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_node in $redis_nodes; do
         splitRedisAddress "$rd_node"
         if [ "$cur_podname" = "$pod_name" ]; then
@@ -173,7 +182,7 @@ areAllRedisServersReady() {
     log "INFO" "Check $1s for each redis server to be ready"
     getDataFromRedisNodeFinder
     maxTimeout=$1
-    IFS=$(echo "\n\b")
+    setLineSeparator
     is_all_redis_server_running=true
     for rd_node in $redis_nodes; do
         endTime=$(($(date +%s) + maxTimeout))
@@ -262,7 +271,7 @@ isNodeInTheCluster() {
 # anything about cluster. If no node knows then cluster does not exist
 checkIfRedisClusterExist() {
     unset does_redis_cluster_exist
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_info in $redis_nodes; do
         isNodeInTheCluster "$rd_info"
 
@@ -292,7 +301,7 @@ findIpPortOfInitialMasterPods() {
     master_nodes_ip_port=""
     master_nodes_count=0
 
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_master_info in $initial_master_nodes; do
         checkIfRedisServerIsReady "$rd_master_info"
         if [ $is_current_redis_server_running = false ]; then
@@ -368,7 +377,7 @@ getSelfShardMasterIpPort() {
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     unset shard_master_rd_address
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_info in $redis_nodes; do
         if contains "$rd_info" "$cur_shard_name"; then
             isNodeInTheCluster "$rd_info"
@@ -464,14 +473,14 @@ meetWithNewNodes() {
     cur_shard_name=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
     log "SHARD" "Current Shard Name $cur_shard_name"
     getDataFromRedisNodeFinder
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_node in $redis_nodes; do
         if [ "${rd_node#"$cur_shard_name"}" != "$rd_node" ]; then
             meetWithNode "$rd_node"
         fi
     done
 
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_node in $redis_nodes; do
         meetWithNode "$rd_node"
     done
@@ -508,7 +517,7 @@ update_is_master_from_different_shard() {
 
     my_shard=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
 
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_node in $redis_nodes; do
         splitRedisAddress "$rd_node"
         if { [ "$cur_address" = "$shard_master_hostname" ] && [ "$cur_port" = "$shard_master_port" ]; } || \
@@ -527,7 +536,7 @@ getMasterNodeIDForCurrentSlave() {
     unset current_slaves_master_id
     my_shard=$(echo "$HOSTNAME" | rev | cut -c 3- | rev)
 
-    IFS=$(echo "\n\b")
+    setLineSeparator
     for rd_node in $redis_nodes; do
         splitRedisAddress "$rd_node"
         this_shard=$(echo "$cur_podname" | rev | cut -c 3- | rev)
