@@ -16,8 +16,12 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-24.04
+    permissions:
+      packages: write
     steps:
       - uses: actions/checkout@50fbc622fc4ef5163becd7fab6573eac35f8462e # v1.2.0
+        with:
+          fetch-depth: 0
 
       - name: Print version info
         id: semver
