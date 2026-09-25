@@ -8,6 +8,7 @@ log() (
     msg="$2"
     echo "$(timestamp) [$script_name] [$type] $msg" | tee -a /tmp/log.txt
 )
+. /scripts/branch-prep.sh
 loadOldNodesConfIfExist() {
     unset old_nodes_conf
     if [ -e /data/nodes.conf ]; then
@@ -486,6 +487,10 @@ startRedisServerInBackground() {
 # entry Point of script
 runRedis() {
     log "REDIS" "Hello. Start of Posix Shell Script. Redis Version 4. Using Redis trib commands"
+    detachBranchedNodesConf /data || {
+        log "BRANCH" "failed to detach nodes.conf"
+        exit 1
+    }
     setupInitialThings
     startRedisServerInBackground
     processRedisNode

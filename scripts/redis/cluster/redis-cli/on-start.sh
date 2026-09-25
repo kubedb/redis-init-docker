@@ -8,6 +8,7 @@ log() (
     msg="$2"
     echo "$(timestamp) [$script_name] [$type] $msg" | tee -a /tmp/log.txt
 )
+. /scripts/branch-prep.sh
 #Checks if auth password and tls certificate files exist on the node
 #if yes, add them on the argument string
 setUpRedisArgs() {
@@ -772,6 +773,10 @@ startRedisServerInBackground() {
 # entry Point of script
 runRedis() {
     log "REDIS" "Hello. Start of Posix Shell Script. Redis Version is 5+. Using redis-cli commands"
+    detachBranchedNodesConf /data || {
+        log "BRANCH" "failed to detach nodes.conf"
+        exit 1
+    }
     setupInitialThings
     startRedisServerInBackground
     processRedisNode
