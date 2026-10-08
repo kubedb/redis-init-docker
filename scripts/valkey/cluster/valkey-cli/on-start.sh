@@ -8,6 +8,7 @@ log() (
     msg="$2"
     echo "$(timestamp) [$script_name] [$type] $msg" | tee -a /tmp/log.txt
 )
+. /scripts/branch-prep.sh
 #Checks if auth password and tls certificate files exist on the node
 #if yes, add them on the argument string
 setUpValkeyArgs() {
@@ -620,6 +621,10 @@ startValkeyServerInBackground() {
 # entry Point of script
 runValkey() {
     log "VALKEY" "Hello. Start of Posix Shell Script. Valkey Version is 5 or 6 or 7. Using valkey-cli commands"
+    detachBranchedNodesConf /data || {
+        log "BRANCH" "failed to detach nodes.conf"
+        exit 1
+    }
     setupInitialThings
     startValkeyServerInBackground
     processValkeyNode

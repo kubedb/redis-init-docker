@@ -3,6 +3,7 @@ if [ "$DISTRIBUTION" = "Valkey" ]; then
     if [ "$REDIS_MODE" = "Cluster" ]; then
         cp /tmp/scripts/valkey/cluster/valkey-cli/* /scripts
         cp /tmp/scripts/redis-node-finder /scripts/
+        cp /tmp/scripts/common/branch-prep.sh /scripts/
     elif [ "$REDIS_MODE" = "Sentinel" ]; then
         cp /tmp/scripts/valkey/sentinel/* /scripts
         cp /tmp/scripts/redis-node-finder /scripts/
@@ -19,6 +20,7 @@ elif [ "$DISTRIBUTION" = "Official" ]; then
             cp /tmp/scripts/redis/cluster/redis-cli/* /scripts
         fi
         cp /tmp/scripts/redis-node-finder /scripts/
+        cp /tmp/scripts/common/branch-prep.sh /scripts/
     elif [ "$REDIS_MODE" = "Sentinel" ]; then
 
         cp /tmp/scripts/redis/sentinel/* /scripts
