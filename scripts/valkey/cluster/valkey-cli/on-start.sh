@@ -292,8 +292,8 @@ findIpPortOfInitialMasterPods() {
 
         splitValkeyAddress "$vk_master_info"
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
-        if [ -n "$cur_address" ]; then
-            cur_node_ip_port="$cur_address:$cur_port"
+        if [ -n "$cur_ip" ]; then
+            cur_node_ip_port="$cur_ip:$cur_port"
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
         fi
@@ -384,9 +384,10 @@ joinCurrentNodeAsSlave() {
         log "SHARD" "Current shard master ip:port@busport -> $shard_master_vk_address"
         getNodeIDUsingIP "$shard_master_vk_address"
         if [ -n "$current_node_id" ]; then
-            replica_ip_port="$valkey_address:$valkey_database_port"
+            splitValkeyAddress "$valkey_node_info"
+            replica_ip_port="$cur_ip:$cur_port"
             splitValkeyAddress "$shard_master_vk_address"
-            shard_master_ip_port="$cur_address:$cur_port"
+            shard_master_ip_port="$cur_ip:$cur_port"
             RESP=$(valkey-cli $valkey_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
             sleep 5
             log "ADD NODE" "$RESP"
@@ -433,7 +434,7 @@ meetWithNode() {
     splitValkeyAddress "$vk_node"
 
     if ! contains "$old_nodes_conf" "$cur_ip" || ! contains "$old_nodes_conf" "$cur_port" || ! contains "$nodes_conf" "$cur_ip" || ! contains "$nodes_conf" "$cur_port"; then
-        RESP=$(valkey-cli -c -h "$valkey_address" -p "$valkey_database_port" $valkey_args cluster meet "$cur_ip" "6379" "16379")
+        RESP=$(valkey-cli -c -h "$POD_IP" -p "$valkey_database_port" $valkey_args cluster meet "$cur_ip" "$cur_port" "$cur_busport")
         log "MEET" "Meet between $HOSTNAME and $cur_podname is $RESP"
     fi
 }
@@ -607,7 +608,12 @@ startValkeyServerInBackground() {
             valkey_server_pid=$!
         fi
     else
-        cur_node_ip=$(getent hosts "$redis_address" | awk '{ print $1 }')
+        # The announced hostname is the client-facing endpoint and may
+        # resolve to an external load-balancer VIP. Valkey cluster-bus
+        # traffic must use the pod IP carried in the fifth node-finder field.
+        # Using getent here incorrectly makes cluster-announce-ip point at
+        # the external VIP.
+        cur_node_ip="${cur_ip:-$POD_IP}"
         if [ "${TLS:-0}" = "ON" ]; then
             exec valkey-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${valkey_address}" --cluster-announce-tls-port "${valkey_database_port}" --cluster-announce-bus-port "${valkey_busport}" --cluster-announce-ip "$cur_node_ip" $args &
             valkey_server_pid=$!
