@@ -311,8 +311,8 @@ findIpPortOfInitialMasterPods() {
 
         splitRedisAddress "$rd_master_info"
         # If cur_node_ip_port is set. We retried IP:Port of the pod successfully.
-        if [ -n "$cur_address" ]; then
-            cur_node_ip_port="$cur_address:$cur_port"
+        if [ -n "$cur_ip" ]; then
+            cur_node_ip_port="$cur_ip:$cur_port"
             master_nodes_ip_port="$master_nodes_ip_port $cur_node_ip_port"
             master_nodes_count=$((master_nodes_count + 1))
         fi
@@ -403,9 +403,10 @@ joinCurrentNodeAsSlave() {
         log "SHARD" "Current shard master ip:port@busport -> $shard_master_rd_address"
         getNodeIDUsingIP "$shard_master_rd_address"
         if [ -n "$current_node_id" ]; then
-            replica_ip_port="$redis_address:$redis_database_port"
+            splitRedisAddress "$redis_node_info"
+            replica_ip_port="$cur_ip:$cur_port"
             splitRedisAddress "$shard_master_rd_address"
-            shard_master_ip_port="$cur_address:$cur_port"
+            shard_master_ip_port="$cur_ip:$cur_port"
             RESP=$(redis-cli $redis_args --cluster add-node "$replica_ip_port" "$shard_master_ip_port" --cluster-slave --cluster-master-id "$current_node_id")
             sleep 5
             log "ADD NODE" "$RESP"
@@ -452,7 +453,7 @@ meetWithNode() {
     splitRedisAddress "$rd_node"
 
     if ! contains "$old_nodes_conf" "$cur_ip" || ! contains "$old_nodes_conf" "$cur_port" || ! contains "$nodes_conf" "$cur_ip" || ! contains "$nodes_conf" "$cur_port"; then
-        RESP=$(redis-cli -c -h "$redis_address" -p "$redis_database_port" $redis_args cluster meet "$cur_ip" "6379" "16379")
+        RESP=$(redis-cli -c -h "$POD_IP" -p "$redis_database_port" $redis_args cluster meet "$cur_ip" "$cur_port" "$cur_busport")
         log "MEET" "Meet between $HOSTNAME and $cur_podname is $RESP"
     fi
 }
@@ -741,7 +742,12 @@ startRedisServerInBackground() {
               fi
         fi
     else
-        cur_node_ip=$(getent hosts "$redis_address" | awk '{ print $1 }')
+        # The announced hostname is the client-facing endpoint and may
+        # resolve to an external load-balancer VIP. Redis cluster-bus
+        # traffic must use the pod IP carried in the fifth node-finder field.
+        # Using getent here incorrectly makes cluster-announce-ip point at
+        # the external VIP.
+        cur_node_ip="${cur_ip:-$POD_IP}"
         if [ "${TLS:-0}" = "ON" ]; then
             exec redis-server /data/default.conf --cluster-preferred-endpoint-type "${endpoint_type}" --cluster-announce-hostname "${redis_address}" --cluster-announce-tls-port "${redis_database_port}" --cluster-announce-bus-port "${redis_busport}" --cluster-announce-ip "$cur_node_ip" $args &
             redis_server_pid=$!
